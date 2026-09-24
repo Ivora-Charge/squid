@@ -3,7 +3,13 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type Stripe from "stripe";
 import type { ChargeSession, Property, PublicSession } from "../types";
-import { captureAmount, platformFee, MINIMUM_CHARGE_CENTS } from "../money";
+import {
+  applicationFee,
+  captureAmount,
+  platformFee,
+  processingFee,
+  MINIMUM_CHARGE_CENTS,
+} from "../money";
 import { checked, db, withLock } from "./db";
 import { appUrl } from "./config";
 import { HttpError } from "./security";
@@ -329,6 +335,7 @@ export async function reconcile(id: string): Promise<ChargeSession> {
           status: "completed",
           total_cents: 0,
           fee_cents: 0,
+          stripe_fee_cents: 0,
           energy_kwh: Number(external.bill.energy_kwh ?? 0),
           started_at: external.usage?.started_at ?? s.started_at,
           ended_at: external.usage?.ended_at ?? s.ended_at,
@@ -569,7 +576,7 @@ export async function reconcile(id: string): Promise<ChargeSession> {
         if (
           pi.status !== "succeeded" ||
           pi.amount_received !== total ||
-          pi.application_fee_amount !== platformFee(total)
+          pi.application_fee_amount !== applicationFee(total)
         ) {
           await update(id, { status: "review" });
           return loadSession(id);
@@ -580,6 +587,7 @@ export async function reconcile(id: string): Promise<ChargeSession> {
         status: "completed",
         total_cents: charged,
         fee_cents: platformFee(charged),
+        stripe_fee_cents: processingFee(charged),
         energy_kwh: Number(bill.energy_kwh ?? 0),
         checkout_url: null,
         last_error: null,

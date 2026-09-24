@@ -75,6 +75,7 @@ export function demoDashboard(): DashboardData {
         energy_kwh: Number((total / property.rate_cents).toFixed(2)),
         total_cents: total,
         fee_cents: Math.round(total * 0.06),
+        stripe_fee_cents: Math.round(total * 0.029) + 30,
         created_at: created,
         started_at: created,
         ended_at: new Date(Date.parse(created) + 2 * 3600000).toISOString(),

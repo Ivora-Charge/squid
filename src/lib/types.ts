@@ -51,6 +51,7 @@ export type ChargeSession = {
   energy_kwh: number;
   total_cents: number | null;
   fee_cents: number | null;
+  stripe_fee_cents: number | null;
   stop_requested: boolean;
   refund_requested: boolean;
   last_error: string | null;
@@ -83,6 +84,7 @@ export type HostSession = Pick<
   | "energy_kwh"
   | "total_cents"
   | "fee_cents"
+  | "stripe_fee_cents"
   | "created_at"
   | "started_at"
   | "ended_at"

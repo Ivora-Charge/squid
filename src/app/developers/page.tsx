@@ -39,8 +39,9 @@ export default function Developers() {
           </li>
           <li>
             <strong>Stripe Connect:</strong> Squid’s own checkout, card
-            authorizations, refunds, and host transfers. Squid receives a 6%
-            application fee on the final charging amount.
+            authorizations, refunds, and host transfers. The Connect application
+            fee is Squid’s 6% plus Stripe’s processing fee, both on the final
+            charging amount.
           </li>
           <li>
             <strong>Ivora:</strong> OCPP charger registration, connection state,
@@ -90,9 +91,9 @@ export default function Developers() {
         <p>
           Enable Stripe Connect and use a test secret key while developing.
           Hosts complete Express onboarding. Checkout authorizes a $25 hold,
-          then Squid captures the final metered amount with a 6% application
-          fee. The unused hold is released. Stripe processing fees come from the
-          platform’s share.
+          then Squid captures the final metered amount with an application fee
+          of 6% plus Stripe’s processing fee (2.9% + 30¢). The unused hold is
+          released. Processing fees pass through to the host at cost.
         </p>
         <pre>
           <code>{`stripe listen --forward-to localhost:3000/api/stripe/webhook\n# Save the printed whsec_ value as STRIPE_WEBHOOK_SECRET`}</code>

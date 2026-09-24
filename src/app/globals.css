@@ -1221,6 +1221,7 @@ button {
 }
 .chart-footer {
   display: flex;
+  flex-wrap: wrap;
   gap: 22px;
   border-top: 1px solid #2b3829;
   margin-top: 17px;

@@ -89,7 +89,7 @@ test("landing, host demo, and navigation are mobile friendly", async ({
     .click();
   await expect(
     page.getByRole("heading", {
-      name: "94% for you. 6% keeps Squid swimming.",
+      name: "A 6% Squid fee. Stripe’s fee at cost.",
     }),
   ).toBeVisible();
   await nav.getByRole("button", { name: "Settings", exact: true }).click();

@@ -4,7 +4,7 @@
 
 Squid turns an OCPP charger at a vacation rental into a paid guest amenity. Hosts connect their charger, set a price, connect payouts, and print a QR sticker. Guests scan, authorize a card hold, charge, and pay for the energy delivered. The interface is dark, responsive, and designed for phones.
 
-This is an Apache-2.0 reference application for the Ivora API. One Squid operator manages all hosts through one Ivora tenant. Squid owns guest access and payments: Stripe Connect routes 94% of the final charging amount to the host, with a 6% application fee for Squid. Ivora handles OCPP and metered billing through **external-funded charging sessions**, without using Ivora payment adapters.
+This is an Apache-2.0 reference application for the Ivora API. One Squid operator manages all hosts through one Ivora tenant. Squid owns guest access and payments: Stripe Connect routes the final charging amount to the host minus a 6% Squid fee and Stripe’s processing fee (2.9% + 30¢), both collected as the Connect application fee. Ivora handles OCPP and metered billing through **external-funded charging sessions**, without using Ivora payment adapters.
 
 ![The dark Squid host dashboard, showing charging earnings, usage, and property chargers](docs/squid-preview.png)
 
@@ -86,7 +86,7 @@ stripe listen --forward-to localhost:3000/api/stripe/webhook
 # Put the emitted whsec_ value in STRIPE_WEBHOOK_SECRET.
 ```
 
-Squid verifies Stripe state on the server before starting a charger. After confirmed charging completion, it captures the immutable final Ivora bill and sets `application_fee_amount` to 6%, rounded to the nearest cent. Bills below Stripe's $0.50 USD minimum are waived: Squid releases the entire hold and records $0 collected, while preserving Ivora's metered bill. For a $10.00 charge, the host receives $9.40 and Squid receives $0.60 before Stripe processing fees. Processing fees are paid by the platform. Full refunds reverse both the host transfer and application fee. See [Stripe destination charges](https://docs.stripe.com/connect/destination-charges) and [manual capture](https://docs.stripe.com/api/payment_intents/capture).
+Squid verifies Stripe state on the server before starting a charger. After confirmed charging completion, it captures the immutable final Ivora bill and sets `application_fee_amount` to Squid's 6% plus Stripe's processing fee (2.9% + 30¢), each rounded to the nearest cent. Bills below Stripe's $0.50 USD minimum are waived: Squid releases the entire hold and records $0 collected, while preserving Ivora's metered bill. For a $10.00 charge, the application fee is $1.19: $0.60 for Squid and $0.59 covering Stripe's processing fee, so the host receives $8.81. Processing fees are passed through to hosts at Stripe's standard rate; Squid adds nothing on top. Full refunds reverse both the host transfer and application fee. See [Stripe destination charges](https://docs.stripe.com/connect/destination-charges) and [manual capture](https://docs.stripe.com/api/payment_intents/capture).
 
 Unplugging ends the physical transaction; reconciliation finalizes its bill and completes payment automatically. Ivora's completed session response may omit live usage, so retries settle from its immutable final bill without regressing to a starting state. A concurrent reconciliation returns the latest saved session, including any queued stop request. Guest polling keeps confirmed readings during transient failures and displays a retry notice only after repeated failures.
 
@@ -148,7 +148,7 @@ Tests cover payment and fee invariants, settlement retries, ownership and guest 
 
 ## Boundaries
 
-This implementation has a USD/US model, one connector per property, a $25 hold, whole-session refunds, and a fixed 6% fee. Charging requests a stop at 85% of the hold or after 24 hours. Delayed meter reports or charger connectivity can still cause overages. Squid never silently caps a larger final bill or assumes a dispatched stop means the charger stopped. Uncertain outcomes remain reserved for operator review; see [recovery and architecture](docs/architecture.md).
+This implementation has a USD/US model, one connector per property, a $25 hold, whole-session refunds, and a fixed 6% fee plus Stripe's processing fee passed through to hosts. Charging requests a stop at 85% of the hold or after 24 hours. Delayed meter reports or charger connectivity can still cause overages. Squid never silently caps a larger final bill or assumes a dispatched stop means the charger stopped. Uncertain outcomes remain reserved for operator review; see [recovery and architecture](docs/architecture.md).
 
 The included policy pages identify the project as a demonstration. A live operator must provide their contact information and applicable policies, configure any required taxes, and validate their hardware and payment flows before accepting guests. The current code does not calculate tax, handle disputes, or provide an automated operator reconciliation console.
 

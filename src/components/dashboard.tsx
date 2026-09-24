@@ -39,6 +39,10 @@ import { QRSticker } from "./qr-sticker";
 import { money } from "@/lib/money";
 import type { DashboardData, HostSession, Property } from "@/lib/types";
 import type { ChargerStatus } from "@/lib/status";
+// What reaches the host: the guest's payment less Squid's fee and Stripe's fee.
+function hostShare(s: HostSession) {
+  return (s.total_cents ?? 0) - (s.fee_cents ?? 0) - (s.stripe_fee_cents ?? 0);
+}
 type Tab = "overview" | "chargers" | "sessions" | "payouts" | "settings";
 const nav = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
@@ -106,6 +110,10 @@ export function Dashboard({
   const paid = sessions.filter((s) => s.status === "completed");
   const gross = paid.reduce((sum, s) => sum + (s.total_cents ?? 0), 0);
   const fees = paid.reduce((sum, s) => sum + (s.fee_cents ?? 0), 0);
+  const processing = paid.reduce(
+    (sum, s) => sum + (s.stripe_fee_cents ?? 0),
+    0,
+  );
   const energy = sessions.reduce((sum, s) => sum + Number(s.energy_kwh), 0);
   const properties = data.properties.filter((p) =>
     `${p.name} ${p.city}`.toLowerCase().includes(search.toLowerCase()),
@@ -213,6 +221,7 @@ export function Dashboard({
         "kWh",
         "Gross USD",
         "Squid fee USD",
+        "Stripe fee USD",
         "Host USD",
       ],
       ...filtered.map((s) => [
@@ -223,7 +232,8 @@ export function Dashboard({
         s.energy_kwh,
         ((s.total_cents ?? 0) / 100).toFixed(2),
         ((s.fee_cents ?? 0) / 100).toFixed(2),
-        (((s.total_cents ?? 0) - (s.fee_cents ?? 0)) / 100).toFixed(2),
+        ((s.stripe_fee_cents ?? 0) / 100).toFixed(2),
+        (hostShare(s) / 100).toFixed(2),
       ]),
     ];
     const csv = rows
@@ -476,8 +486,8 @@ export function Dashboard({
                     <Stat
                       icon={Wallet}
                       label="Your earnings"
-                      value={money(gross - fees)}
-                      note="After Squid’s 6% fee"
+                      value={money(gross - fees - processing)}
+                      note="After Squid’s fee and Stripe processing"
                       coral
                     />
                     <Stat
@@ -524,7 +534,13 @@ export function Dashboard({
                           Squid fee <strong>{money(fees)}</strong>
                         </span>
                         <span>
-                          You keep <strong className="coral">94%</strong>
+                          Stripe fees <strong>{money(processing)}</strong>
+                        </span>
+                        <span>
+                          You keep{" "}
+                          <strong className="coral">
+                            {money(gross - fees - processing)}
+                          </strong>
                         </span>
                       </div>
                     </section>
@@ -734,11 +750,13 @@ export function Dashboard({
                 <section className="panel payout-explainer">
                   <CreditCard size={28} />
                   <div>
-                    <h2>94% for you. 6% keeps Squid swimming.</h2>
+                    <h2>A 6% Squid fee. Stripe’s fee at cost.</h2>
                     <p>
-                      For every $10.00 charging session, $9.40 is routed to your
-                      connected Stripe account and $0.60 goes to Squid. Stripe
-                      processing fees are paid from the platform’s share.
+                      For every $10.00 charging session, Squid keeps $0.60 and
+                      Stripe’s card processing fee of $0.59 (2.9% + 30¢) is
+                      deducted, so $8.81 is routed to your connected Stripe
+                      account. Processing fees pass through at Stripe’s standard
+                      rate; Squid adds nothing on top.
                     </p>
                     <p>
                       Transfers to your Stripe balance happen after the final
@@ -799,8 +817,9 @@ export function Dashboard({
                       </span>
                     </div>
                     <p>
-                      Connect your Stripe account to receive 94% of each
-                      charging payment directly.
+                      Connect your Stripe account to receive your share of each
+                      charging payment directly, after Squid’s 6% fee and
+                      Stripe’s processing fee.
                     </p>
                     <div className="stripe-wordmark">
                       stripe <span>CONNECT</span>
@@ -928,7 +947,8 @@ export function Dashboard({
         >
           <p>
             Refund the full {money(refund.total_cents ?? 0)} for this session?
-            This also reverses the host transfer and Squid’s application fee.
+            This also reverses the host transfer and the application fee,
+            including Stripe’s processing fee.
           </p>
           <ErrorMessage message={error} />
           <div className="form-actions">
@@ -1009,9 +1029,7 @@ function SessionsTable({
                 <span className="muted">kWh</span>
               </td>
               <td className="table-money">
-                {s.status === "completed"
-                  ? money((s.total_cents ?? 0) - (s.fee_cents ?? 0))
-                  : "—"}
+                {s.status === "completed" ? money(hostShare(s)) : "—"}
               </td>
               <td>
                 <span
@@ -1072,6 +1090,10 @@ function ChargerView({
   const paid = sessions.filter((s) => s.status === "completed");
   const gross = paid.reduce((sum, s) => sum + (s.total_cents ?? 0), 0);
   const fees = paid.reduce((sum, s) => sum + (s.fee_cents ?? 0), 0);
+  const processing = paid.reduce(
+    (sum, s) => sum + (s.stripe_fee_cents ?? 0),
+    0,
+  );
   const energy = sessions.reduce((sum, s) => sum + Number(s.energy_kwh), 0);
   const ready = p.published && payoutsReady;
   return (
@@ -1113,8 +1135,8 @@ function ChargerView({
         <Stat
           icon={Wallet}
           label="Earnings here"
-          value={money(gross - fees)}
-          note="After Squid’s 6% fee"
+          value={money(gross - fees - processing)}
+          note="After Squid’s fee and Stripe processing"
           coral
         />
         <Stat
@@ -1510,7 +1532,7 @@ function RevenueChart({
           (s) =>
             Date.parse(s.created_at) >= start && Date.parse(s.created_at) < end,
         )
-        .reduce((sum, s) => sum + (s.total_cents ?? 0) - (s.fee_cents ?? 0), 0),
+        .reduce((sum, s) => sum + hostShare(s), 0),
       date: new Date(end).toLocaleDateString("en-US", {
         month: "short",
         day: "numeric",
@@ -1522,7 +1544,7 @@ function RevenueChart({
     <div
       className="revenue-chart"
       role="img"
-      aria-label={`Earnings chart for the last ${days} days. Total ${money(sessions.reduce((sum, s) => sum + (s.total_cents ?? 0) - (s.fee_cents ?? 0), 0))}.`}
+      aria-label={`Earnings chart for the last ${days} days. Total ${money(sessions.reduce((sum, s) => sum + hostShare(s), 0))}.`}
     >
       <div className="chart-y">
         <span>{money(max, 0)}</span>

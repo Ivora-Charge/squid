@@ -11,7 +11,7 @@ import {
   CreditCard,
 } from "lucide-react";
 import { Busy, ErrorMessage, Modal, post } from "./ui";
-import { money } from "@/lib/money";
+import { money, splitPayment } from "@/lib/money";
 import type { Property } from "@/lib/types";
 import { AddressSearch } from "./address-search";
 import {
@@ -52,6 +52,11 @@ export function AddCharger({
   function field(name: keyof typeof form, value: string) {
     setForm((f) => ({ ...f, [name]: value }));
   }
+  // A 20 kWh example at the entered price; an empty field shows zeros.
+  const exampleTotal = Math.round(Number(form.rate) * 2000);
+  const example = splitPayment(
+    Number.isSafeInteger(exampleTotal) && exampleTotal >= 0 ? exampleTotal : 0,
+  );
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setError("");
@@ -232,12 +237,16 @@ export function AddCharger({
             </div>
             <div className="price-breakdown">
               <p>
-                <span>You receive</span>
-                <strong>94% of each charge</strong>
-              </p>
-              <p>
                 <span>Squid fee</span>
                 <span>6%</span>
+              </p>
+              <p>
+                <span>Stripe processing</span>
+                <span>2.9% + 30¢ per charge</span>
+              </p>
+              <p>
+                <span>You receive</span>
+                <strong>The rest of each charge</strong>
               </p>
             </div>
             <p className="fine-print">
@@ -286,22 +295,19 @@ export function AddCharger({
             <div className="price-breakdown">
               <p>
                 <span>Example: 20 kWh session</span>
-                <strong>{money(Math.round(Number(form.rate) * 2000))}</strong>
+                <strong>{money(example.total)}</strong>
               </p>
               <p>
                 <span>Squid fee · 6%</span>
-                <span>
-                  {money(Math.round(Number(form.rate) * 2000 * 0.06))}
-                </span>
+                <span>{money(example.fee)}</span>
               </p>
               <p>
-                <span>You receive · 94%</span>
-                <strong className="green">
-                  {money(
-                    Math.round(Number(form.rate) * 2000) -
-                      Math.round(Number(form.rate) * 2000 * 0.06),
-                  )}
-                </strong>
+                <span>Stripe processing · 2.9% + 30¢</span>
+                <span>{money(example.processing)}</span>
+              </p>
+              <p>
+                <span>You receive</span>
+                <strong className="green">{money(example.host)}</strong>
               </p>
             </div>
             <p className="fine-print">

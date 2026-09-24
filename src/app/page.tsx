@@ -55,7 +55,7 @@ export default function Home() {
                 <Check size={15} /> No monthly subscription
               </span>
               <span>
-                <Check size={15} /> You keep 94%
+                <Check size={15} /> Just a 6% Squid fee
               </span>
             </div>
           </div>

@@ -33,11 +33,13 @@ export default function Terms() {
         </p>
         <h2>Host earnings</h2>
         <p>
-          Squid’s application fee is 6% of the final transaction amount, rounded
-          to the nearest cent. The remaining 94% is transferred to the host’s
-          connected Stripe account. Bank payouts follow Stripe’s account
-          requirements and payout schedule. A full refund reverses the host
-          transfer and the application fee.
+          Squid’s fee is 6% of the final transaction amount, rounded to the
+          nearest cent. Stripe’s card processing fee (currently 2.9% plus $0.30
+          per transaction) is also deducted from the host’s share and collected
+          together with Squid’s fee as the Connect application fee. The
+          remainder is transferred to the host’s connected Stripe account. Bank
+          payouts follow Stripe’s account requirements and payout schedule. A
+          full refund reverses the host transfer and the application fee.
         </p>
         <h2>Address search</h2>
         <p>

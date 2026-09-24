@@ -22,7 +22,7 @@ sequenceDiagram
     G->>S: Request stop
     S->>I: Stop the matched session
     S->>I: Confirm inactive usage and finalize bill
-    S->>P: Capture exact bill with 6% application fee
+    S->>P: Capture exact bill; application fee = 6% + Stripe processing
     S->>I: Report verified settlement
     S->>D: Save completed receipt
 ```
@@ -51,7 +51,7 @@ Rate-limit rows contain HMAC digests of normalized email addresses and trusted s
 
 Amounts use integer US cents. Squid saves the host destination, rate, tariff, and hold before requesting Checkout. The server checks the PaymentIntent's session metadata, destination, currency, capture method, and authorization amount. A browser redirect has no authority to start charging.
 
-External-funded Ivora sessions associate charging with Squid's verified external payment. No Ivora payment service or payment flow is created. A final capture requires inactive matched usage, a final bill for that same transaction, and a total within the authorization. The 6% application fee is calculated from this final total, not the hold.
+External-funded Ivora sessions associate charging with Squid's verified external payment. No Ivora payment service or payment flow is created. A final capture requires inactive matched usage, a final bill for that same transaction, and a total within the authorization. The application fee, Squid's 6% plus Stripe's processing fee (2.9% + 30¢) passed through to the host, is calculated from this final total, not the hold.
 
 `awaiting_payment → starting → charging → stopping → settling → completed` is the normal path. Physical and processor observations determine transitions. `canceled` means no payable charging was started; a zero-cost completed transaction receives a zero-cost receipt. `refunded` requires a confirmed successful refund. `review` reserves the connector when the outcome needs attention.
 

@@ -153,6 +153,7 @@ beforeEach(() => {
     energy_kwh: 0,
     total_cents: null,
     fee_cents: null,
+    stripe_fee_cents: null,
     stop_requested: false,
     refund_requested: false,
     last_error: null,
@@ -275,19 +276,20 @@ describe("external-funded charging settlement", () => {
     expect(mock.session.status).toBe("stopping");
     expect(mock.capture).not.toHaveBeenCalled();
   });
-  it("captures the immutable final bill and applies 6% to that amount", async () => {
+  it("captures the immutable final bill and takes both fees from that amount", async () => {
     mock.external.usage.active = false;
     mock.external.usage.ended_at = "2026-09-23T11:00:00Z";
     await reconcile("session-one");
     expect(mock.capture).toHaveBeenCalledWith(
       "pi_test",
-      { amount_to_capture: 243, application_fee_amount: 15 },
+      { amount_to_capture: 243, application_fee_amount: 52 },
       { idempotencyKey: "session-one:capture" },
     );
     expect(mock.session).toMatchObject({
       status: "completed",
       total_cents: 243,
       fee_cents: 15,
+      stripe_fee_cents: 37,
       energy_kwh: 6.941,
     });
     await reconcile("session-one");
@@ -298,7 +300,7 @@ describe("external-funded charging settlement", () => {
     Object.assign(mock.pi, {
       status: "succeeded",
       amount_received: 243,
-      application_fee_amount: 15,
+      application_fee_amount: 52,
     });
     await reconcile("session-one");
     expect(mock.session.status).toBe("completed");
@@ -371,7 +373,7 @@ describe("external-funded charging settlement", () => {
     Object.assign(mock.pi, {
       status: "succeeded",
       amount_received: 243,
-      application_fee_amount: 15,
+      application_fee_amount: 52,
     });
     await reconcile("session-one");
     expect(mock.session.status).toBe("completed");
@@ -397,6 +399,7 @@ describe("external-funded charging settlement", () => {
         status: "completed",
         total_cents: 0,
         fee_cents: 0,
+        stripe_fee_cents: 0,
         energy_kwh: 0.028,
       });
       expect(mock.external.bill.total_minor).toBe(total);
@@ -414,7 +417,7 @@ describe("external-funded charging settlement", () => {
       );
     },
   );
-  it("captures a bill exactly at the minimum and still takes the 6% fee", async () => {
+  it("captures a bill exactly at the minimum and still takes both fees", async () => {
     Object.assign(mock.external, {
       status: "completed",
       usage: null,
@@ -431,10 +434,11 @@ describe("external-funded charging settlement", () => {
       status: "completed",
       total_cents: 50,
       fee_cents: 3,
+      stripe_fee_cents: 31,
     });
     expect(mock.capture).toHaveBeenCalledWith(
       "pi_test",
-      { amount_to_capture: 50, application_fee_amount: 3 },
+      { amount_to_capture: 50, application_fee_amount: 34 },
       { idempotencyKey: "session-one:capture" },
     );
     expect(mock.cancel).not.toHaveBeenCalled();

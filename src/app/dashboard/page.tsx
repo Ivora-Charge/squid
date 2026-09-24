@@ -22,7 +22,7 @@ export default async function DashboardPage() {
     db()
       .from("squid_sessions")
       .select(
-        "id,property_id,status,rate_cents,energy_kwh,total_cents,fee_cents,created_at,started_at,ended_at",
+        "id,property_id,status,rate_cents,energy_kwh,total_cents,fee_cents,stripe_fee_cents,created_at,started_at,ended_at",
       )
       .eq("host_id", host.id)
       .order("created_at", { ascending: false })
