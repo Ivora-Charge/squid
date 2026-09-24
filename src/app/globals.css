@@ -1847,6 +1847,36 @@ th:last-child {
   background: none;
   margin: 0;
 }
+/* Same footprint as a plain input, for forms where price is one field of many. */
+.price-input.compact {
+  gap: 8px;
+  height: 48px;
+  padding: 0 13px;
+  margin-top: 7px;
+  background: #121713;
+}
+.price-input.compact:focus-within {
+  border-color: var(--coral);
+}
+.price-input.compact:has(> input:focus-visible) {
+  outline: 2px solid var(--coral);
+  outline-offset: 4px;
+}
+.price-input.compact > span:first-child {
+  font-size: 14px;
+}
+.price-input.compact > span:last-child {
+  font-size: 12px;
+}
+.price-input.compact > input {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  padding: 0;
+  font-size: 14px;
+  outline: none;
+}
 .price-breakdown {
   background: #242f22;
   border-radius: 8px;
@@ -3865,10 +3895,23 @@ input[type="range"] {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px 18px;
 }
+/* One height for every control in the grid; selects otherwise size themselves. */
+.settings-form-grid > label > input,
+.settings-form-grid > label > select {
+  height: 48px;
+}
 @media (max-width: 650px) {
   .settings-summary,
   .settings-form-grid {
     grid-template-columns: 1fr;
+  }
+  .settings-form-grid > label > input,
+  .settings-form-grid > label > select,
+  .price-input.compact {
+    height: 52px;
+  }
+  .price-input.compact > input {
+    font-size: 16px;
   }
   .charger-settings > .section-top {
     flex-wrap: wrap;

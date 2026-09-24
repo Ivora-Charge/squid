@@ -1364,7 +1364,7 @@ function EditCharger({
           </label>
           <label>
             Price per kWh (USD)
-            <div className="price-input">
+            <div className="price-input compact">
               <span>$</span>
               <input
                 type="number"
