@@ -340,3 +340,36 @@ test("public requests cannot control host chargers or private guest sessions", a
     ).status(),
   ).toBe(400);
 });
+test("clicking a charger card opens its own dashboard with a QR download prompt", async ({
+  page,
+}) => {
+  await page.goto("/demo");
+  await page
+    .getByRole("button", { name: "The Weekender", exact: true })
+    .first()
+    .click();
+  await expect(page).toHaveURL(/charger=/);
+  await expect(
+    page.getByRole("heading", { name: "The Weekender", level: 1 }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Ready for guests" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Download and print the QR code for your charger", {
+      exact: false,
+    }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Download & print QR code" }).click();
+  await expect(
+    page.getByRole("img", {
+      name: "Printable Squid QR sticker for The Weekender",
+    }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Close dialog" }).click();
+  await page.getByRole("button", { name: "All chargers" }).click();
+  await expect(page).not.toHaveURL(/charger=/);
+  await expect(
+    page.getByRole("heading", { name: "Your place. Good energy." }),
+  ).toBeVisible();
+});

@@ -10,6 +10,7 @@ import {
   Settings,
   ArrowUpRight,
   ArrowRight,
+  ArrowLeft,
   Plus,
   Search,
   ChevronDown,
@@ -57,7 +58,7 @@ export function Dashboard({
   const [search, setSearch] = useState("");
   const [add, setAdd] = useState(false);
   const [sticker, setSticker] = useState<Property | null>(null);
-  const [manage, setManage] = useState<Property | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [help, setHelp] = useState(false);
   const [notifications, setNotifications] = useState(false);
   const [error, setError] = useState("");
@@ -66,8 +67,8 @@ export function Dashboard({
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const t = params.get("tab");
-    const setup = initial.properties.find((p) => p.id === params.get("setup"));
-    if (setup && !demo) setManage(setup);
+    const open = params.get("charger") ?? params.get("setup");
+    if (open) setSelectedId(open);
     if (
       t &&
       ["overview", "chargers", "sessions", "payouts", "settings"].includes(t)
@@ -111,12 +112,44 @@ export function Dashboard({
       .toLowerCase()
       .includes(search.toLowerCase()),
   );
+  const selected = selectedId
+    ? (data.properties.find((p) => p.id === selectedId) ?? null)
+    : null;
+  const selectedSessions = selected
+    ? data.sessions.filter((s) => s.property_id === selected.id)
+    : [];
   function switchTab(t: Tab) {
     setTab(t);
     setSearch("");
+    setSelectedId(null);
     const url = new URL(window.location.href);
     url.searchParams.set("tab", t);
+    url.searchParams.delete("charger");
+    url.searchParams.delete("setup");
     history.replaceState(null, "", url);
+  }
+  function openCharger(p: Property | null) {
+    setSelectedId(p?.id ?? null);
+    const url = new URL(window.location.href);
+    if (p) url.searchParams.set("charger", p.id);
+    else url.searchParams.delete("charger");
+    url.searchParams.delete("setup");
+    history.replaceState(null, "", url);
+  }
+  function updateProperty(p: Property) {
+    setData((d) => {
+      const next = {
+        ...d,
+        properties: d.properties.map((x) => (x.id === p.id ? p : x)),
+      };
+      if (demo)
+        localStorage.setItem(
+          "squid-demo-properties",
+          JSON.stringify(next.properties),
+        );
+      return next;
+    });
+    if (!demo) router.refresh();
   }
   function saveProperty(p: Property) {
     setData((d) => {
@@ -137,7 +170,7 @@ export function Dashboard({
     if (demo)
       setData((d) => ({ ...d, payoutsReady: true, stripeConnected: true }));
     setAdd(false);
-    if (!demo) setManage(p);
+    openCharger(p);
   }
   async function connect() {
     setBusy(true);
@@ -294,16 +327,26 @@ export function Dashboard({
         <header className="dashboard-topbar">
           <div className="breadcrumb">
             Your workspace <span>/</span>
+            {selected && (
+              <>
+                <button className="text-link" onClick={() => openCharger(null)}>
+                  My chargers
+                </button>
+                <span>/</span>
+              </>
+            )}
             <strong>
-              {tab === "overview"
-                ? "Overview"
-                : tab === "chargers"
-                  ? "My chargers"
-                  : tab === "sessions"
-                    ? "Charging sessions"
-                    : tab === "payouts"
-                      ? "Earnings & payouts"
-                      : "Settings"}
+              {selected
+                ? selected.name
+                : tab === "overview"
+                  ? "Overview"
+                  : tab === "chargers"
+                    ? "My chargers"
+                    : tab === "sessions"
+                      ? "Charging sessions"
+                      : tab === "payouts"
+                        ? "Earnings & payouts"
+                        : "Settings"}
             </strong>
           </div>
           <div className="topbar-right">
@@ -347,474 +390,423 @@ export function Dashboard({
               </Link>
             </div>
           )}
-          <div className="page-heading">
-            <div>
-              <p className="eyebrow">
-                {tab === "overview"
-                  ? `HELLO, ${demo ? "ALEX" : data.email.split("@")[0].toUpperCase()} ☀`
-                  : "YOUR SQUID WORKSPACE"}
-              </p>
-              <h1>{title}</h1>
-              <p>
-                {tab === "overview"
-                  ? "Happy guests, fuller batteries, and a little extra in your pocket."
-                  : "Simple tools for a more welcoming stay."}
-              </p>
-            </div>
-            <button
-              className="button primary"
-              disabled={!ready}
-              onClick={() => setAdd(true)}
-            >
-              <Plus size={18} /> Add a charger
-            </button>
-          </div>
-          <ErrorMessage message={error} />
-          {(tab === "overview" || tab === "payouts") && (
+          {selected ? (
+            <ChargerView
+              property={selected}
+              sessions={selectedSessions}
+              demo={demo}
+              payoutsReady={data.payoutsReady}
+              stripeConnected={data.stripeConnected}
+              onBack={() => openCharger(null)}
+              onSticker={() => setSticker(selected)}
+              onUpdate={updateProperty}
+              onRefund={setRefund}
+            />
+          ) : (
             <>
-              <div className="section-top compact">
-                <h2>
-                  {tab === "payouts" ? "Your earnings" : "A little overview"}
-                </h2>
-                <select
-                  className="period-select"
-                  aria-label="Time period"
-                  value={days}
-                  onChange={(e) => setDays(Number(e.target.value))}
-                >
-                  <option value={30}>Last 30 days</option>
-                  <option value={7}>Last 7 days</option>
-                </select>
-              </div>
-              <div className="stats-grid">
-                <Stat
-                  icon={Wallet}
-                  label="Your earnings"
-                  value={money(gross - fees)}
-                  note="After Squid’s 6% fee"
-                  coral
-                />
-                <Stat
-                  icon={Zap}
-                  label="Charging sessions"
-                  value={String(paid.length)}
-                  note="A warm welcome, fully charged"
-                />
-                <Stat
-                  icon={Leaf}
-                  label="Energy shared"
-                  value={`${energy.toFixed(1)}`}
-                  unit="kWh"
-                  note="A little fuel for their next adventure"
-                />
-                <Stat
-                  icon={Plug}
-                  label="Your chargers"
-                  value={String(data.properties.length)}
-                  note={`${data.properties.filter((p) => p.published).length} published guest pages`}
-                />
-              </div>
-              <div className="analytics-row">
-                <section className="panel earnings-panel">
-                  <div className="section-top">
-                    <div>
-                      <h2>A little extra looks good on you</h2>
-                      <p>Your earnings over the last {days} days</p>
-                    </div>
-                    <span className="chart-legend">
-                      <i /> Your earnings
-                    </span>
-                  </div>
-                  <RevenueChart sessions={paid} days={days} />
-                  <div className="chart-footer">
-                    <span>
-                      Guest payments <strong>{money(gross)}</strong>
-                    </span>
-                    <span>
-                      Squid fee <strong>{money(fees)}</strong>
-                    </span>
-                    <span>
-                      You keep <strong className="coral">94%</strong>
-                    </span>
-                  </div>
-                </section>
-                <section className="qr-feature">
-                  <div className="eyebrow">SMALL STICKER. BIG POTENTIAL.</div>
-                  <h2>
-                    Scan. Plug in.
-                    <br />
-                    Make yourself
-                    <br />
-                    at home.
-                  </h2>
-                  <p>
-                    Your guest’s next great experience
-                    <br />
-                    starts with a little square.
-                  </p>
-                  <div className="qr-feature-art">
-                    <ScanIllustration />
-                  </div>
-                  <button
-                    className="button secondary"
-                    disabled={!ready}
-                    onClick={() =>
-                      data.properties[0]
-                        ? setSticker(data.properties[0])
-                        : setAdd(true)
-                    }
-                  >
-                    Get your QR sticker <ArrowUpRight size={16} />
-                  </button>
-                </section>
-              </div>
-            </>
-          )}
-          {(tab === "overview" || tab === "chargers") && (
-            <section className="charger-section">
-              <div className="section-top">
+              <div className="page-heading">
                 <div>
-                  <h2>
-                    Your little charging network{" "}
-                    <span className="count-pill">{data.properties.length}</span>
-                  </h2>
-                  <p>Different places. The same warm welcome.</p>
-                </div>
-                {tab === "overview" ? (
-                  <button
-                    className="text-link"
-                    onClick={() => switchTab("chargers")}
-                  >
-                    All chargers <ArrowRight size={16} />
-                  </button>
-                ) : (
-                  <div className="search-field">
-                    <Search size={16} />
-                    <input
-                      aria-label="Search chargers"
-                      placeholder="Find a charger…"
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                    />
-                  </div>
-                )}
-              </div>
-              <div className="charger-grid">
-                {properties.map((p, i) => (
-                  <article className="charger-card" key={p.id}>
-                    <div className={`charger-picture picture-${i % 3}`}>
-                      <img
-                        src="/images/cabin.jpg"
-                        alt="Vacation home among trees"
-                      />
-                      <div className="picture-overlay" />
-                      <span
-                        className={`badge ${p.published ? "green-badge" : "neutral-badge"}`}
-                      >
-                        <span className="status-dot" />
-                        {p.published ? "Published" : "Finish setup"}
-                      </span>
-                      <button
-                        className="picture-menu"
-                        aria-label={`Manage ${p.name}`}
-                        onClick={() => setManage(p)}
-                      >
-                        <MoreHorizontal size={20} />
-                      </button>
-                      <span className="property-tag">
-                        {p.city}, {p.state}
-                      </span>
-                    </div>
-                    <div className="charger-body">
-                      <div className="charger-title">
-                        <h3>{p.name}</h3>
-                        <span>
-                          {money(p.rate_cents)}
-                          <small>/ kWh</small>
-                        </span>
-                      </div>
-                      <p>
-                        <Plug size={14} />
-                        {p.connector_type}
-                        <span>·</span>
-                        {p.max_kw} kW<span>·</span>1 connector
-                      </p>
-                      <div className="charger-card-footer">
-                        <Link
-                          className="text-link"
-                          href={demo ? "/c/demo" : `/c/${p.slug}`}
-                        >
-                          Guest view <ArrowUpRight size={14} />
-                        </Link>
-                        <button
-                          className="sticker-button"
-                          onClick={() => setSticker(p)}
-                        >
-                          <QrCode size={16} /> QR sticker
-                        </button>
-                      </div>
-                    </div>
-                  </article>
-                ))}
-                <button
-                  className="add-charger-card"
-                  disabled={!ready}
-                  onClick={() => setAdd(true)}
-                >
-                  <span>
-                    <Plus size={24} />
-                  </span>
-                  <h3>Room for a little more?</h3>
-                  <p>
-                    Add another charger.
-                    <br />
-                    Spread the good energy.
+                  <p className="eyebrow">
+                    {tab === "overview"
+                      ? `HELLO, ${demo ? "ALEX" : data.email.split("@")[0].toUpperCase()} ☀`
+                      : "YOUR SQUID WORKSPACE"}
                   </p>
-                  <strong>
-                    Add a charger <ArrowUpRight size={15} />
-                  </strong>
-                </button>
-              </div>
-            </section>
-          )}
-          {(tab === "overview" || tab === "sessions") && (
-            <section className="panel sessions-panel">
-              <div className="section-top">
-                <div>
-                  <h2>Recent good energy</h2>
-                  <p>A little record of every welcome.</p>
-                </div>
-                <div className="table-tools">
-                  {tab === "sessions" && (
-                    <div className="search-field">
-                      <Search size={16} />
-                      <input
-                        placeholder="Search sessions…"
-                        aria-label="Search sessions"
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                      />
-                    </div>
-                  )}
-                  <button
-                    className="button secondary small-button"
-                    onClick={exportCsv}
-                  >
-                    <Download size={15} /> Export
-                  </button>
-                </div>
-              </div>
-              <div className="table-scroll">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>CHARGER</th>
-                      <th>DATE</th>
-                      <th>ENERGY</th>
-                      <th>YOUR EARNINGS</th>
-                      <th>STATUS</th>
-                      {tab === "sessions" && (
-                        <th>
-                          <span className="sr-only">Actions</span>
-                        </th>
-                      )}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filtered
-                      .slice(0, tab === "overview" ? 4 : 100)
-                      .map((s) => (
-                        <tr key={s.id}>
-                          <td>
-                            <div className="table-property">
-                              <span className="table-plug">
-                                <Plug size={18} />
-                              </span>
-                              <span>
-                                {data.properties.find(
-                                  (p) => p.id === s.property_id,
-                                )?.name ?? "Charger"}
-                                <small>{s.id.slice(0, 11)}</small>
-                              </span>
-                            </div>
-                          </td>
-                          <td>
-                            {new Date(s.created_at).toLocaleDateString(
-                              "en-US",
-                              { month: "short", day: "numeric" },
-                            )}
-                            <small className="block muted">
-                              {new Date(s.created_at).toLocaleTimeString(
-                                "en-US",
-                                { hour: "numeric", minute: "2-digit" },
-                              )}
-                            </small>
-                          </td>
-                          <td>
-                            {Number(s.energy_kwh).toFixed(1)}{" "}
-                            <span className="muted">kWh</span>
-                          </td>
-                          <td className="table-money">
-                            {s.status === "completed"
-                              ? money((s.total_cents ?? 0) - (s.fee_cents ?? 0))
-                              : "—"}
-                          </td>
-                          <td>
-                            <span
-                              className={`badge ${s.status === "completed" ? "green-badge" : "neutral-badge"}`}
-                            >
-                              <span className="status-dot" />
-                              {s.status === "completed"
-                                ? "Complete"
-                                : s.status.replaceAll("_", " ")}
-                            </span>
-                          </td>
-                          {tab === "sessions" && (
-                            <td>
-                              {s.status === "completed" &&
-                                Boolean(s.total_cents) && (
-                                  <button
-                                    className="text-link"
-                                    onClick={() => setRefund(s)}
-                                  >
-                                    Refund
-                                  </button>
-                                )}
-                            </td>
-                          )}
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-                {!filtered.length && (
-                  <div className="empty-state">
-                    <Zap size={28} />
-                    <h3>Your first charge is a scan away.</h3>
-                    <p>
-                      Once guests start charging, their sessions will appear
-                      here.
-                    </p>
-                  </div>
-                )}
-              </div>
-              {tab === "overview" && (
-                <button
-                  className="table-view-all"
-                  onClick={() => switchTab("sessions")}
-                >
-                  View all sessions <ArrowRight size={15} />
-                </button>
-              )}
-            </section>
-          )}
-          {tab === "payouts" && (
-            <section className="panel payout-explainer">
-              <CreditCard size={28} />
-              <div>
-                <h2>94% for you. 6% keeps Squid swimming.</h2>
-                <p>
-                  For every $10.00 charging session, $9.40 is routed to your
-                  connected Stripe account and $0.60 goes to Squid. Stripe
-                  processing fees are paid from the platform’s share.
-                </p>
-                <p>
-                  Transfers to your Stripe balance happen after the final
-                  charging payment is captured. Bank payout timing follows your
-                  Stripe account’s schedule.
-                </p>
-              </div>
-              <button
-                className="button primary"
-                disabled={busy}
-                onClick={connect}
-              >
-                {busy ? (
-                  <Busy />
-                ) : data.stripeConnected ? (
-                  "Manage payout setup"
-                ) : (
-                  "Connect Stripe"
-                )}
-                <ArrowUpRight size={16} />
-              </button>
-            </section>
-          )}
-          {tab === "settings" && (
-            <div className="settings-grid">
-              <section className="panel settings-card">
-                <div className="section-top">
-                  <h2>Your host account</h2>
-                  <span className="avatar">
-                    {data.email.slice(0, 2).toUpperCase()}
-                  </span>
-                </div>
-                <label>
-                  Email address
-                  <input value={data.email} readOnly />
-                </label>
-                <p className="fine-print">
-                  Your sign-in email keeps your properties and sessions private.
-                </p>
-                {!demo && (
-                  <Link href="/login/reset" className="text-link">
-                    Set or change your password <ArrowUpRight size={15} />
-                  </Link>
-                )}
-                <button
-                  className="button secondary"
-                  onClick={async () => {
-                    if (!demo) await post("/auth/logout", {});
-                    window.location.assign("/");
-                  }}
-                >
-                  <LogOut size={16} />
-                  {demo ? "Leave demo" : "Sign out"}
-                </button>
-              </section>
-              <section className="panel settings-card">
-                <div className="section-top">
-                  <h2>Your payouts</h2>
-                  <span
-                    className={`badge ${data.payoutsReady ? "green-badge" : "neutral-badge"}`}
-                  >
-                    {data.payoutsReady ? "Connected" : "Setup needed"}
-                  </span>
-                </div>
-                <p>
-                  Connect your Stripe account to receive 94% of each charging
-                  payment directly.
-                </p>
-                <div className="stripe-wordmark">
-                  stripe <span>CONNECT</span>
+                  <h1>{title}</h1>
+                  <p>
+                    {tab === "overview"
+                      ? "Happy guests, fuller batteries, and a little extra in your pocket."
+                      : "Simple tools for a more welcoming stay."}
+                  </p>
                 </div>
                 <button
                   className="button primary"
-                  disabled={busy}
-                  onClick={connect}
+                  disabled={!ready}
+                  onClick={() => setAdd(true)}
                 >
-                  {busy ? (
-                    <Busy />
-                  ) : data.stripeConnected ? (
-                    "Manage Stripe connection"
-                  ) : (
-                    "Connect with Stripe"
-                  )}
-                  <ArrowUpRight size={16} />
+                  <Plus size={18} /> Add a charger
                 </button>
-              </section>
-              <section className="panel settings-card full-width">
-                <Code2 size={24} />
-                <h2>Open source. Yours to shape.</h2>
-                <p>
-                  Squid is an independent charging experience built on the Ivora
-                  API. Next.js on Vercel, Supabase for your data, and Stripe
-                  Connect for your money.
-                </p>
-                <Link href="/developers" className="text-link">
-                  Explore the developer guide <ArrowUpRight size={16} />
-                </Link>
-              </section>
-            </div>
+              </div>
+              <ErrorMessage message={error} />
+              {(tab === "overview" || tab === "payouts") && (
+                <>
+                  <div className="section-top compact">
+                    <h2>
+                      {tab === "payouts"
+                        ? "Your earnings"
+                        : "A little overview"}
+                    </h2>
+                    <select
+                      className="period-select"
+                      aria-label="Time period"
+                      value={days}
+                      onChange={(e) => setDays(Number(e.target.value))}
+                    >
+                      <option value={30}>Last 30 days</option>
+                      <option value={7}>Last 7 days</option>
+                    </select>
+                  </div>
+                  <div className="stats-grid">
+                    <Stat
+                      icon={Wallet}
+                      label="Your earnings"
+                      value={money(gross - fees)}
+                      note="After Squid’s 6% fee"
+                      coral
+                    />
+                    <Stat
+                      icon={Zap}
+                      label="Charging sessions"
+                      value={String(paid.length)}
+                      note="A warm welcome, fully charged"
+                    />
+                    <Stat
+                      icon={Leaf}
+                      label="Energy shared"
+                      value={`${energy.toFixed(1)}`}
+                      unit="kWh"
+                      note="A little fuel for their next adventure"
+                    />
+                    <Stat
+                      icon={Plug}
+                      label="Your chargers"
+                      value={String(data.properties.length)}
+                      note={`${data.properties.filter((p) => p.published).length} published guest pages`}
+                    />
+                  </div>
+                  <div className="analytics-row">
+                    <section className="panel earnings-panel">
+                      <div className="section-top">
+                        <div>
+                          <h2>A little extra looks good on you</h2>
+                          <p>Your earnings over the last {days} days</p>
+                        </div>
+                        <span className="chart-legend">
+                          <i /> Your earnings
+                        </span>
+                      </div>
+                      <RevenueChart sessions={paid} days={days} />
+                      <div className="chart-footer">
+                        <span>
+                          Guest payments <strong>{money(gross)}</strong>
+                        </span>
+                        <span>
+                          Squid fee <strong>{money(fees)}</strong>
+                        </span>
+                        <span>
+                          You keep <strong className="coral">94%</strong>
+                        </span>
+                      </div>
+                    </section>
+                    <section className="qr-feature">
+                      <div className="eyebrow">
+                        SMALL STICKER. BIG POTENTIAL.
+                      </div>
+                      <h2>
+                        Scan. Plug in.
+                        <br />
+                        Make yourself
+                        <br />
+                        at home.
+                      </h2>
+                      <p>
+                        Your guest’s next great experience
+                        <br />
+                        starts with a little square.
+                      </p>
+                      <div className="qr-feature-art">
+                        <ScanIllustration />
+                      </div>
+                      <button
+                        className="button secondary"
+                        disabled={!ready}
+                        onClick={() =>
+                          data.properties[0]
+                            ? setSticker(data.properties[0])
+                            : setAdd(true)
+                        }
+                      >
+                        Get your QR sticker <ArrowUpRight size={16} />
+                      </button>
+                    </section>
+                  </div>
+                </>
+              )}
+              {(tab === "overview" || tab === "chargers") && (
+                <section className="charger-section">
+                  <div className="section-top">
+                    <div>
+                      <h2>
+                        Your little charging network{" "}
+                        <span className="count-pill">
+                          {data.properties.length}
+                        </span>
+                      </h2>
+                      <p>Different places. The same warm welcome.</p>
+                    </div>
+                    {tab === "overview" ? (
+                      <button
+                        className="text-link"
+                        onClick={() => switchTab("chargers")}
+                      >
+                        All chargers <ArrowRight size={16} />
+                      </button>
+                    ) : (
+                      <div className="search-field">
+                        <Search size={16} />
+                        <input
+                          aria-label="Search chargers"
+                          placeholder="Find a charger…"
+                          value={search}
+                          onChange={(e) => setSearch(e.target.value)}
+                        />
+                      </div>
+                    )}
+                  </div>
+                  <div className="charger-grid">
+                    {properties.map((p, i) => (
+                      <article
+                        className="charger-card"
+                        key={p.id}
+                        onClick={() => openCharger(p)}
+                      >
+                        <div className={`charger-picture picture-${i % 3}`}>
+                          <img
+                            src="/images/cabin.jpg"
+                            alt="Vacation home among trees"
+                          />
+                          <div className="picture-overlay" />
+                          <span
+                            className={`badge ${p.published ? "green-badge" : "neutral-badge"}`}
+                          >
+                            <span className="status-dot" />
+                            {p.published ? "Published" : "Finish setup"}
+                          </span>
+                          <button
+                            className="picture-menu"
+                            aria-label={`Manage ${p.name}`}
+                            onClick={() => openCharger(p)}
+                          >
+                            <MoreHorizontal size={20} />
+                          </button>
+                          <span className="property-tag">
+                            {p.city}, {p.state}
+                          </span>
+                        </div>
+                        <div className="charger-body">
+                          <div className="charger-title">
+                            <h3>
+                              <button
+                                className="charger-open"
+                                onClick={() => openCharger(p)}
+                              >
+                                {p.name}
+                              </button>
+                            </h3>
+                            <span>
+                              {money(p.rate_cents)}
+                              <small>/ kWh</small>
+                            </span>
+                          </div>
+                          <p>
+                            <Plug size={14} />
+                            {p.connector_type}
+                            <span>·</span>
+                            {p.max_kw} kW<span>·</span>1 connector
+                          </p>
+                          <div
+                            className="charger-card-footer"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <Link
+                              className="text-link"
+                              href={demo ? "/c/demo" : `/c/${p.slug}`}
+                            >
+                              Guest view <ArrowUpRight size={14} />
+                            </Link>
+                            <button
+                              className="sticker-button"
+                              onClick={() => setSticker(p)}
+                            >
+                              <QrCode size={16} /> QR sticker
+                            </button>
+                          </div>
+                        </div>
+                      </article>
+                    ))}
+                    <button
+                      className="add-charger-card"
+                      disabled={!ready}
+                      onClick={() => setAdd(true)}
+                    >
+                      <span>
+                        <Plus size={24} />
+                      </span>
+                      <h3>Room for a little more?</h3>
+                      <p>
+                        Add another charger.
+                        <br />
+                        Spread the good energy.
+                      </p>
+                      <strong>
+                        Add a charger <ArrowUpRight size={15} />
+                      </strong>
+                    </button>
+                  </div>
+                </section>
+              )}
+              {(tab === "overview" || tab === "sessions") && (
+                <section className="panel sessions-panel">
+                  <div className="section-top">
+                    <div>
+                      <h2>Recent good energy</h2>
+                      <p>A little record of every welcome.</p>
+                    </div>
+                    <div className="table-tools">
+                      {tab === "sessions" && (
+                        <div className="search-field">
+                          <Search size={16} />
+                          <input
+                            placeholder="Search sessions…"
+                            aria-label="Search sessions"
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                          />
+                        </div>
+                      )}
+                      <button
+                        className="button secondary small-button"
+                        onClick={exportCsv}
+                      >
+                        <Download size={15} /> Export
+                      </button>
+                    </div>
+                  </div>
+                  <SessionsTable
+                    sessions={filtered.slice(0, tab === "overview" ? 4 : 100)}
+                    properties={data.properties}
+                    onRefund={tab === "sessions" ? setRefund : undefined}
+                  />
+                  {tab === "overview" && (
+                    <button
+                      className="table-view-all"
+                      onClick={() => switchTab("sessions")}
+                    >
+                      View all sessions <ArrowRight size={15} />
+                    </button>
+                  )}
+                </section>
+              )}
+              {tab === "payouts" && (
+                <section className="panel payout-explainer">
+                  <CreditCard size={28} />
+                  <div>
+                    <h2>94% for you. 6% keeps Squid swimming.</h2>
+                    <p>
+                      For every $10.00 charging session, $9.40 is routed to your
+                      connected Stripe account and $0.60 goes to Squid. Stripe
+                      processing fees are paid from the platform’s share.
+                    </p>
+                    <p>
+                      Transfers to your Stripe balance happen after the final
+                      charging payment is captured. Bank payout timing follows
+                      your Stripe account’s schedule.
+                    </p>
+                  </div>
+                  <button
+                    className="button primary"
+                    disabled={busy}
+                    onClick={connect}
+                  >
+                    {busy ? (
+                      <Busy />
+                    ) : data.stripeConnected ? (
+                      "Manage payout setup"
+                    ) : (
+                      "Connect Stripe"
+                    )}
+                    <ArrowUpRight size={16} />
+                  </button>
+                </section>
+              )}
+              {tab === "settings" && (
+                <div className="settings-grid">
+                  <section className="panel settings-card">
+                    <div className="section-top">
+                      <h2>Your host account</h2>
+                      <span className="avatar">
+                        {data.email.slice(0, 2).toUpperCase()}
+                      </span>
+                    </div>
+                    <label>
+                      Email address
+                      <input value={data.email} readOnly />
+                    </label>
+                    <p className="fine-print">
+                      Your sign-in email keeps your properties and sessions
+                      private.
+                    </p>
+                    {!demo && (
+                      <Link href="/login/reset" className="text-link">
+                        Set or change your password <ArrowUpRight size={15} />
+                      </Link>
+                    )}
+                    <button
+                      className="button secondary"
+                      onClick={async () => {
+                        if (!demo) await post("/auth/logout", {});
+                        window.location.assign("/");
+                      }}
+                    >
+                      <LogOut size={16} />
+                      {demo ? "Leave demo" : "Sign out"}
+                    </button>
+                  </section>
+                  <section className="panel settings-card">
+                    <div className="section-top">
+                      <h2>Your payouts</h2>
+                      <span
+                        className={`badge ${data.payoutsReady ? "green-badge" : "neutral-badge"}`}
+                      >
+                        {data.payoutsReady ? "Connected" : "Setup needed"}
+                      </span>
+                    </div>
+                    <p>
+                      Connect your Stripe account to receive 94% of each
+                      charging payment directly.
+                    </p>
+                    <div className="stripe-wordmark">
+                      stripe <span>CONNECT</span>
+                    </div>
+                    <button
+                      className="button primary"
+                      disabled={busy}
+                      onClick={connect}
+                    >
+                      {busy ? (
+                        <Busy />
+                      ) : data.stripeConnected ? (
+                        "Manage Stripe connection"
+                      ) : (
+                        "Connect with Stripe"
+                      )}
+                      <ArrowUpRight size={16} />
+                    </button>
+                  </section>
+                  <section className="panel settings-card full-width">
+                    <Code2 size={24} />
+                    <h2>Open source. Yours to shape.</h2>
+                    <p>
+                      Squid is an independent charging experience built on the
+                      Ivora API. Next.js on Vercel, Supabase for your data, and
+                      Stripe Connect for your money.
+                    </p>
+                    <Link href="/developers" className="text-link">
+                      Explore the developer guide <ArrowUpRight size={16} />
+                    </Link>
+                  </section>
+                </div>
+              )}
+            </>
           )}
           <footer className="dashboard-footer">
             <span>
@@ -868,36 +860,6 @@ export function Dashboard({
           property={sticker}
           demo={demo}
           onClose={() => setSticker(null)}
-        />
-      )}{" "}
-      {manage && (
-        <ManageCharger
-          property={manage}
-          demo={demo}
-          payoutsReady={data.payoutsReady}
-          stripeConnected={data.stripeConnected}
-          onClose={() => {
-            setManage(null);
-            const url = new URL(window.location.href);
-            url.searchParams.delete("setup");
-            history.replaceState(null, "", url);
-          }}
-          onUpdate={(p) => {
-            setData((d) => {
-              const next = {
-                ...d,
-                properties: d.properties.map((x) => (x.id === p.id ? p : x)),
-              };
-              if (demo)
-                localStorage.setItem(
-                  "squid-demo-properties",
-                  JSON.stringify(next.properties),
-                );
-              return next;
-            });
-            setManage(p);
-            if (!demo) router.refresh();
-          }}
         />
       )}
       {help && (
@@ -958,6 +920,246 @@ export function Dashboard({
           </div>
         </Modal>
       )}
+    </div>
+  );
+}
+function SessionsTable({
+  sessions,
+  properties,
+  onRefund,
+}: {
+  sessions: HostSession[];
+  properties: Property[];
+  onRefund?: (s: HostSession) => void;
+}) {
+  return (
+    <div className="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>CHARGER</th>
+            <th>DATE</th>
+            <th>ENERGY</th>
+            <th>YOUR EARNINGS</th>
+            <th>STATUS</th>
+            {onRefund && (
+              <th>
+                <span className="sr-only">Actions</span>
+              </th>
+            )}
+          </tr>
+        </thead>
+        <tbody>
+          {sessions.map((s) => (
+            <tr key={s.id}>
+              <td>
+                <div className="table-property">
+                  <span className="table-plug">
+                    <Plug size={18} />
+                  </span>
+                  <span>
+                    {properties.find((p) => p.id === s.property_id)?.name ??
+                      "Charger"}
+                    <small>{s.id.slice(0, 11)}</small>
+                  </span>
+                </div>
+              </td>
+              <td>
+                {new Date(s.created_at).toLocaleDateString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                })}
+                <small className="block muted">
+                  {new Date(s.created_at).toLocaleTimeString("en-US", {
+                    hour: "numeric",
+                    minute: "2-digit",
+                  })}
+                </small>
+              </td>
+              <td>
+                {Number(s.energy_kwh).toFixed(1)}{" "}
+                <span className="muted">kWh</span>
+              </td>
+              <td className="table-money">
+                {s.status === "completed"
+                  ? money((s.total_cents ?? 0) - (s.fee_cents ?? 0))
+                  : "—"}
+              </td>
+              <td>
+                <span
+                  className={`badge ${s.status === "completed" ? "green-badge" : "neutral-badge"}`}
+                >
+                  <span className="status-dot" />
+                  {s.status === "completed"
+                    ? "Complete"
+                    : s.status.replaceAll("_", " ")}
+                </span>
+              </td>
+              {onRefund && (
+                <td>
+                  {s.status === "completed" && Boolean(s.total_cents) && (
+                    <button className="text-link" onClick={() => onRefund(s)}>
+                      Refund
+                    </button>
+                  )}
+                </td>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {!sessions.length && (
+        <div className="empty-state">
+          <Zap size={28} />
+          <h3>Your first charge is a scan away.</h3>
+          <p>Once guests start charging, their sessions will appear here.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+function ChargerView({
+  property: p,
+  sessions,
+  demo,
+  payoutsReady,
+  stripeConnected,
+  onBack,
+  onSticker,
+  onUpdate,
+  onRefund,
+}: {
+  property: Property;
+  sessions: HostSession[];
+  demo: boolean;
+  payoutsReady: boolean;
+  stripeConnected: boolean;
+  onBack: () => void;
+  onSticker: () => void;
+  onUpdate: (p: Property) => void;
+  onRefund: (s: HostSession) => void;
+}) {
+  const paid = sessions.filter((s) => s.status === "completed");
+  const gross = paid.reduce((sum, s) => sum + (s.total_cents ?? 0), 0);
+  const fees = paid.reduce((sum, s) => sum + (s.fee_cents ?? 0), 0);
+  const energy = sessions.reduce((sum, s) => sum + Number(s.energy_kwh), 0);
+  const ready = p.published && payoutsReady;
+  return (
+    <div className="charger-view">
+      <button className="text-link back-link" onClick={onBack}>
+        <ArrowLeft size={15} /> All chargers
+      </button>
+      <div className="page-heading">
+        <div>
+          <p className="eyebrow">
+            {p.address}, {p.city}, {p.state}
+          </p>
+          <h1>{p.name}</h1>
+          <p className="charger-meta">
+            <span
+              className={`badge ${p.published ? "green-badge" : "neutral-badge"}`}
+            >
+              <span className="status-dot" />
+              {p.published ? "Published" : "Finish setup"}
+            </span>
+            <Plug size={14} />
+            {p.connector_type} · {p.max_kw} kW · {money(p.rate_cents)} / kWh
+          </p>
+        </div>
+        <div className="charger-actions">
+          <Link
+            className="button secondary"
+            href={demo ? "/c/demo" : `/c/${p.slug}`}
+          >
+            Guest view <ArrowUpRight size={16} />
+          </Link>
+          <button className="button primary" onClick={onSticker}>
+            <QrCode size={16} /> QR sticker
+          </button>
+        </div>
+      </div>
+      <div className="stats-grid">
+        <Stat
+          icon={Wallet}
+          label="Earnings here"
+          value={money(gross - fees)}
+          note="After Squid’s 6% fee"
+          coral
+        />
+        <Stat
+          icon={Zap}
+          label="Charging sessions"
+          value={String(paid.length)}
+          note="At this charger"
+        />
+        <Stat
+          icon={Leaf}
+          label="Energy shared"
+          value={energy.toFixed(1)}
+          unit="kWh"
+          note="From this charger"
+        />
+        <Stat
+          icon={Plug}
+          label="Guest price"
+          value={money(p.rate_cents)}
+          unit="/ kWh"
+          note={`${p.connector_type} · up to ${p.max_kw} kW`}
+        />
+      </div>
+      <div className="charger-view-row">
+        <section className="panel charger-setup-panel">
+          <div className="section-top">
+            <div>
+              <h2>{ready ? "Ready for guests" : "Finish setup"}</h2>
+              <p>
+                {ready
+                  ? "Your charger is connected and published."
+                  : "A few details before guests can charge."}
+              </p>
+            </div>
+          </div>
+          {ready && (
+            <div className="charger-ready">
+              <span className="charger-ready-icon">
+                <Check size={22} />
+              </span>
+              <div>
+                <strong>You’re all set.</strong>
+                <p>
+                  Download and print the QR code for your charger. Place it
+                  where guests will see it—they scan, plug in, and pay from
+                  their phone.
+                </p>
+                <button className="button primary" onClick={onSticker}>
+                  <Download size={16} /> Download & print QR code
+                </button>
+              </div>
+            </div>
+          )}
+          <ChargerSetup
+            property={p}
+            demo={demo}
+            payoutsReady={payoutsReady}
+            stripeConnected={stripeConnected}
+            onUpdate={onUpdate}
+            collapsed={ready}
+          />
+        </section>
+        <section className="panel sessions-panel">
+          <div className="section-top">
+            <div>
+              <h2>Recent charges here</h2>
+              <p>Every welcome, one charger at a time.</p>
+            </div>
+          </div>
+          <SessionsTable
+            sessions={sessions.slice(0, 50)}
+            properties={[p]}
+            onRefund={onRefund}
+          />
+        </section>
+      </div>
     </div>
   );
 }
@@ -1074,21 +1276,22 @@ function ScanIllustration() {
     </div>
   );
 }
-function ManageCharger({
+function ChargerSetup({
   property: p,
   demo,
   payoutsReady,
   stripeConnected,
-  onClose,
   onUpdate,
+  collapsed,
 }: {
   property: Property;
   demo: boolean;
   payoutsReady: boolean;
   stripeConnected: boolean;
-  onClose: () => void;
   onUpdate: (p: Property) => void;
+  collapsed: boolean;
 }) {
+  const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [credentials, setCredentials] = useState<{
@@ -1171,13 +1374,27 @@ function ManageCharger({
       setBusy(false);
     }
   }
-  return (
-    <Modal title={p.name} onClose={onClose}>
+  if (collapsed && !open)
+    return (
       <div className="stack-form">
-        <p>
-          Copy these details into your charger’s OCPP settings, then publish its
-          guest page.
-        </p>
+        <button className="text-link" onClick={() => setOpen(true)}>
+          Connection details & guest access <ChevronDown size={15} />
+        </button>
+      </div>
+    );
+  return (
+    <div className="charger-setup">
+      <div className="stack-form">
+        {collapsed ? (
+          <button className="text-link" onClick={() => setOpen(false)}>
+            Hide connection details <ChevronDown size={15} className="flip" />
+          </button>
+        ) : (
+          <p>
+            Copy these details into your charger’s OCPP settings, then publish
+            its guest page.
+          </p>
+        )}
         {!payoutsReady && (
           <div className="onboarding-payouts">
             <CreditCard size={20} />
@@ -1302,6 +1519,6 @@ function ManageCharger({
           </button>
         </div>
       </div>
-    </Modal>
+    </div>
   );
 }
