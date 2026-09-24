@@ -414,3 +414,35 @@ test("host edits charger settings in a modal and can sign out", async ({
     .click();
   await expect(page).toHaveURL(`${origin}/`);
 });
+test("an offline charger hides the guest pay flow", async ({ page }) => {
+  await page.goto("/c/demo?offline=1");
+  await expect(
+    page.getByRole("heading", { name: "This charger is offline right now." }),
+  ).toBeVisible();
+  await expect(page.getByText("Offline", { exact: true })).toBeVisible();
+  await expect(page.getByRole("slider")).toHaveCount(0);
+  await expect(page.getByRole("checkbox")).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Try a demo charge" }),
+  ).toHaveCount(0);
+  await expect(page.getByText("/ kWh")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Check again" })).toBeVisible();
+});
+test("hosts see each charger's network status", async ({ page }) => {
+  await page.goto("/demo?tab=chargers");
+  const weekender = page.locator(".charger-card", { hasText: "The Weekender" });
+  const cottage = page.locator(".charger-card", {
+    hasText: "Saltwater Cottage",
+  });
+  await expect(weekender.getByText("Online", { exact: true })).toBeVisible();
+  await expect(cottage.getByText("Offline", { exact: true })).toBeVisible();
+  await cottage
+    .getByRole("button", { name: "Saltwater Cottage", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Ready, but offline" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Guests can’t charge until your charger reconnects."),
+  ).toBeVisible();
+});

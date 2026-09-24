@@ -59,6 +59,8 @@ export function demoDashboard(): DashboardData {
     email: "alex@example.com",
     payoutsReady: true,
     stripeConnected: true,
+    // One of each, so the demo shows how an offline charger looks.
+    status: { "demo-cabin": "online", "demo-cottage": "offline" },
     sessions: Array.from({ length: 28 }, (_, i) => {
       const property = demoProperties[i % 2];
       const total = 560 + ((i * 137) % 1200);

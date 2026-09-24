@@ -323,6 +323,10 @@ button {
   background: #33382e;
   color: #c0c4b8;
 }
+.offline-badge {
+  background: #452a24;
+  color: #f6b9a5;
+}
 .live-pill {
   display: flex;
   align-items: center;
@@ -1380,18 +1384,28 @@ button {
   inset: 0;
   background: linear-gradient(#15220d11, #09170685);
 }
-.charger-picture > .badge {
+.picture-badges {
   position: absolute;
   left: 12px;
   top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: calc(100% - 60px);
+}
+.picture-badges > .badge {
   background: #dfe9cd;
   color: #3e5737;
   font-size: 8px;
   padding: 3px 6px;
 }
-.charger-picture > .neutral-badge {
+.picture-badges > .neutral-badge {
   background: #cccfc1;
   color: #3f4739;
+}
+.picture-badges > .offline-badge {
+  background: #f4d4c8;
+  color: #7b3826;
 }
 .picture-menu {
   position: absolute;
@@ -3916,4 +3930,37 @@ input[type="range"] {
   .charger-settings > .section-top {
     flex-wrap: wrap;
   }
+}
+.charger-ready.offline {
+  border-color: #5a3a30;
+  background: #2a2220;
+}
+.charger-ready.offline .charger-ready-icon {
+  background: #f4d4c8;
+  color: #7b3826;
+}
+.guest-offline {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  padding: 22px;
+  border: 1px solid #4a3a33;
+  border-radius: 12px;
+  background: #1f2320;
+  margin-bottom: 8px;
+}
+.guest-offline > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--coral);
+}
+.guest-offline h3 {
+  font-size: 17px;
+  letter-spacing: -0.3px;
+}
+.guest-offline p {
+  margin: 8px 0 16px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--muted);
 }

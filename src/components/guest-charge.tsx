@@ -13,10 +13,12 @@ import {
   Check,
   Leaf,
   LockKeyhole,
+  WifiOff,
 } from "lucide-react";
 import { Brand, Busy, ErrorMessage, post } from "./ui";
 import { money } from "@/lib/money";
 import type { PublicProperty } from "@/lib/types";
+import type { GuestAvailability } from "@/lib/status";
 export function GuestCharge({
   property: p,
   demo = false,
@@ -84,10 +86,14 @@ export function GuestCharge({
         <div className="guest-card">
           <div className="guest-card-top">
             <span
-              className={`badge ${p.available ? "green-badge" : "neutral-badge"}`}
+              className={`badge ${p.availability === "ready" ? "green-badge" : p.availability === "offline" ? "offline-badge" : "neutral-badge"}`}
             >
               <span className="status-dot" />
-              {p.available ? "Ready when you are" : "Currently unavailable"}
+              {p.availability === "ready"
+                ? "Ready when you are"
+                : p.availability === "offline"
+                  ? "Offline"
+                  : "Currently unavailable"}
             </span>
             {(demo || p.testMode) && (
               <span className="demo-label">{demo ? "DEMO" : "TEST MODE"}</span>
@@ -96,106 +102,116 @@ export function GuestCharge({
           <p className="eyebrow">WELCOME TO</p>
           <h2>{p.name}</h2>
           <p className="guest-description">
-            Settle in. Your car can recharge too.
+            {p.availability === "ready"
+              ? "Settle in. Your car can recharge too."
+              : "Settle in. Charging isn’t available just now."}
           </p>
-          <div className="guest-charger-spec">
-            <span>
-              <Plug size={18} />
-              {p.connector_type}
-            </span>
-            <span>
-              <Zap size={18} />
-              {p.max_kw} kW max
-            </span>
-            <span>Level 2</span>
-          </div>
-          <div className="guest-price">
-            <div>
-              <strong>{money(p.rate_cents)}</strong>
-              <span> / kWh</span>
-            </div>
-            <span>
-              Just the energy you use.
-              <br />
-              No signup. No app.
-            </span>
-          </div>
-          <div className="estimate">
-            <div>
-              <label htmlFor="energy">A little estimate</label>
-              <strong>
-                {energy} kWh <ArrowRight size={13} />{" "}
-                {money(energy * p.rate_cents)}
-              </strong>
-            </div>
-            <input
-              id="energy"
-              type="range"
-              min={5}
-              max={60}
-              step={5}
-              value={energy}
-              onChange={(e) => setEnergy(Number(e.target.value))}
-            />
-            <div className="range-labels">
-              <span>A quick top-up</span>
-              <span>Ready for the road</span>
-            </div>
-          </div>
-          <div className="guest-instructions">
-            <span className="number-circle">1</span>
-            <div>
-              <h3>Plug in and make yourself at home.</h3>
-              <p>{p.instructions}</p>
-            </div>
-          </div>
-          <div className="guest-instructions">
-            <span className="number-circle">2</span>
-            <div>
-              <h3>A small hold. Only pay for your charge.</h3>
-              <p>
-                We’ll authorize {money(p.hold_cents)} on your card. When
-                charging ends, we collect the final cost and release the rest.{" "}
-                We request a stop as you approach the hold amount. You can start
-                another session for more energy. Charges below $0.50 are waived,
-                with the full hold released.
+          {p.availability === "ready" ? (
+            <>
+              <div className="guest-charger-spec">
+                <span>
+                  <Plug size={18} />
+                  {p.connector_type}
+                </span>
+                <span>
+                  <Zap size={18} />
+                  {p.max_kw} kW max
+                </span>
+                <span>Level 2</span>
+              </div>
+              <div className="guest-price">
+                <div>
+                  <strong>{money(p.rate_cents)}</strong>
+                  <span> / kWh</span>
+                </div>
+                <span>
+                  Just the energy you use.
+                  <br />
+                  No signup. No app.
+                </span>
+              </div>
+              <div className="estimate">
+                <div>
+                  <label htmlFor="energy">A little estimate</label>
+                  <strong>
+                    {energy} kWh <ArrowRight size={13} />{" "}
+                    {money(energy * p.rate_cents)}
+                  </strong>
+                </div>
+                <input
+                  id="energy"
+                  type="range"
+                  min={5}
+                  max={60}
+                  step={5}
+                  value={energy}
+                  onChange={(e) => setEnergy(Number(e.target.value))}
+                />
+                <div className="range-labels">
+                  <span>A quick top-up</span>
+                  <span>Ready for the road</span>
+                </div>
+              </div>
+              <div className="guest-instructions">
+                <span className="number-circle">1</span>
+                <div>
+                  <h3>Plug in and make yourself at home.</h3>
+                  <p>{p.instructions}</p>
+                </div>
+              </div>
+              <div className="guest-instructions">
+                <span className="number-circle">2</span>
+                <div>
+                  <h3>A small hold. Only pay for your charge.</h3>
+                  <p>
+                    We’ll authorize {money(p.hold_cents)} on your card. When
+                    charging ends, we collect the final cost and release the
+                    rest. We request a stop as you approach the hold amount. You
+                    can start another session for more energy. Charges below
+                    $0.50 are waived, with the full hold released.
+                  </p>
+                </div>
+              </div>
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={plugged}
+                  onChange={(e) => setPlugged(e.target.checked)}
+                />
+                <span>
+                  I’ve plugged in my vehicle and checked the connector.
+                </span>
+              </label>
+              <ErrorMessage message={error} />
+              <button
+                className="button primary full large"
+                disabled={!plugged || busy}
+                onClick={checkout}
+              >
+                {busy ? (
+                  <Busy>Getting ready…</Busy>
+                ) : (
+                  <>
+                    {demo ? "Try a demo charge" : "Continue to payment"}
+                    <ArrowRight size={18} />
+                  </>
+                )}
+              </button>
+              <div className="secure-note">
+                <ShieldCheck size={15} />
+                {demo
+                  ? "A simulation. No card or charger required."
+                  : "Secure payment through Squid’s Stripe checkout."}
+              </div>
+              <p className="fine-print centered">
+                By continuing, you accept the{" "}
+                <Link href="/terms">charging terms</Link>.<br />
+                You can stop your session from your phone anytime.
               </p>
-            </div>
-          </div>
-          <label className="checkbox-label">
-            <input
-              type="checkbox"
-              checked={plugged}
-              onChange={(e) => setPlugged(e.target.checked)}
-            />
-            <span>I’ve plugged in my vehicle and checked the connector.</span>
-          </label>
-          <ErrorMessage message={error} />
-          <button
-            className="button primary full large"
-            disabled={!plugged || busy || !p.available}
-            onClick={checkout}
-          >
-            {busy ? (
-              <Busy>Getting ready…</Busy>
-            ) : (
-              <>
-                {demo ? "Try a demo charge" : "Continue to payment"}
-                <ArrowRight size={18} />
-              </>
-            )}
-          </button>
-          <div className="secure-note">
-            <ShieldCheck size={15} />
-            {demo
-              ? "A simulation. No card or charger required."
-              : "Secure payment through Squid’s Stripe checkout."}
-          </div>
-          <p className="fine-print centered">
-            By continuing, you accept the{" "}
-            <Link href="/terms">charging terms</Link>.<br />
-            You can stop your session from your phone anytime.
-          </p>
+            </>
+          ) : (
+            <GuestUnavailable reason={p.availability} />
+          )}
         </div>
       </main>
       <footer className="guest-footer">
@@ -204,6 +220,32 @@ export function GuestCharge({
         </span>
         <span>Squid by Ivora</span>
       </footer>
+    </div>
+  );
+}
+function GuestUnavailable({ reason }: { reason: GuestAvailability }) {
+  const offline = reason === "offline";
+  return (
+    <div className="guest-offline">
+      {offline ? <WifiOff size={26} /> : <Plug size={26} />}
+      <div>
+        <h3>
+          {offline
+            ? "This charger is offline right now."
+            : "This charger is in use right now."}
+        </h3>
+        <p>
+          {offline
+            ? "It isn’t connected to the network, so we can’t start a charge or take a payment. Give it a few minutes, or let your host know."
+            : "Another vehicle is plugged in or the connector isn’t ready. Try again once it’s free."}
+        </p>
+        <button
+          className="button secondary"
+          onClick={() => window.location.reload()}
+        >
+          Check again
+        </button>
+      </div>
     </div>
   );
 }

@@ -5,6 +5,8 @@ import { Brand } from "@/components/ui";
 import { db, user } from "@/lib/server/db";
 import { supabaseConfigured } from "@/lib/server/config";
 import { payoutStatus } from "@/lib/server/stripe";
+import { getStation } from "@/lib/server/ivora";
+import { chargerStatus, type ChargerStatus } from "@/lib/status";
 import type { HostSession, Property } from "@/lib/types";
 export const dynamic = "force-dynamic";
 export default async function DashboardPage() {
@@ -44,10 +46,17 @@ export default async function DashboardPage() {
         </Link>
       </main>
     );
-  const account = await payoutStatus(host.id).catch(() => ({
-    ready: false,
-    id: undefined,
-  }));
+  const [account, status] = await Promise.all([
+    payoutStatus(host.id).catch(() => ({ ready: false, id: undefined })),
+    Promise.all(
+      (properties.data as Property[]).map(
+        async (p): Promise<[string, ChargerStatus]> => [
+          p.id,
+          await stationStatus(p.station_id),
+        ],
+      ),
+    ).then(Object.fromEntries<ChargerStatus>),
+  ]);
   return (
     <Dashboard
       initial={{
@@ -56,7 +65,22 @@ export default async function DashboardPage() {
         email: host.email ?? "Host",
         payoutsReady: account.ready,
         stripeConnected: Boolean(account.id),
+        status,
       }}
     />
   );
+}
+// One slow Ivora lookup must not stall the whole dashboard; give up after 4s.
+async function stationStatus(stationId: number | null): Promise<ChargerStatus> {
+  if (!stationId) return "unknown";
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const station = await Promise.race([
+    getStation(stationId),
+    new Promise<null>((resolve) => {
+      timer = setTimeout(() => resolve(null), 4000);
+    }),
+  ])
+    .catch(() => null)
+    .finally(() => clearTimeout(timer));
+  return chargerStatus(station);
 }

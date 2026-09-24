@@ -26,6 +26,7 @@ import {
   Check,
   LogOut,
   PenLine,
+  WifiOff,
   SlidersHorizontal,
   CreditCard,
   Code2,
@@ -37,6 +38,7 @@ import { AddCharger } from "./add-charger";
 import { QRSticker } from "./qr-sticker";
 import { money } from "@/lib/money";
 import type { DashboardData, HostSession, Property } from "@/lib/types";
+import type { ChargerStatus } from "@/lib/status";
 type Tab = "overview" | "chargers" | "sessions" | "payouts" | "settings";
 const nav = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
@@ -129,6 +131,13 @@ export function Dashboard({
     url.searchParams.delete("setup");
     history.replaceState(null, "", url);
   }
+  // Demo chargers added in the browser have no live status; treat them as online.
+  const statusOf = (p: Property): ChargerStatus =>
+    data.status[p.id] ?? (demo ? "online" : "unknown");
+  const offlineCount = data.properties.filter(
+    (p) => statusOf(p) === "offline",
+  ).length;
+  const publishedCount = data.properties.filter((p) => p.published).length;
   function openCharger(p: Property | null) {
     setSelectedId(p?.id ?? null);
     const url = new URL(window.location.href);
@@ -411,6 +420,7 @@ export function Dashboard({
             <ChargerView
               property={selected}
               sessions={selectedSessions}
+              status={statusOf(selected)}
               demo={demo}
               payoutsReady={data.payoutsReady}
               stripeConnected={data.stripeConnected}
@@ -487,7 +497,11 @@ export function Dashboard({
                       icon={Plug}
                       label="Your chargers"
                       value={String(data.properties.length)}
-                      note={`${data.properties.filter((p) => p.published).length} published guest pages`}
+                      note={
+                        offlineCount
+                          ? `${offlineCount} offline · ${publishedCount} published`
+                          : `${publishedCount} published guest pages`
+                      }
                     />
                   </div>
                   <div className="analytics-row">
@@ -592,12 +606,15 @@ export function Dashboard({
                             alt="Vacation home among trees"
                           />
                           <div className="picture-overlay" />
-                          <span
-                            className={`badge ${p.published ? "green-badge" : "neutral-badge"}`}
-                          >
-                            <span className="status-dot" />
-                            {p.published ? "Published" : "Finish setup"}
-                          </span>
+                          <div className="picture-badges">
+                            <span
+                              className={`badge ${p.published ? "green-badge" : "neutral-badge"}`}
+                            >
+                              <span className="status-dot" />
+                              {p.published ? "Published" : "Finish setup"}
+                            </span>
+                            <StatusBadge status={statusOf(p)} />
+                          </div>
                           <button
                             className="picture-menu"
                             aria-label={`Manage ${p.name}`}
@@ -1032,6 +1049,7 @@ function SessionsTable({
 function ChargerView({
   property: p,
   sessions,
+  status,
   demo,
   payoutsReady,
   stripeConnected,
@@ -1042,6 +1060,7 @@ function ChargerView({
 }: {
   property: Property;
   sessions: HostSession[];
+  status: ChargerStatus;
   demo: boolean;
   payoutsReady: boolean;
   stripeConnected: boolean;
@@ -1073,6 +1092,7 @@ function ChargerView({
               <span className="status-dot" />
               {p.published ? "Published" : "Finish setup"}
             </span>
+            <StatusBadge status={status} detailed />
             <Plug size={14} />
             {p.connector_type} · {p.max_kw} kW · {money(p.rate_cents)} / kWh
           </p>
@@ -1122,15 +1142,38 @@ function ChargerView({
         <section className="panel charger-setup-panel">
           <div className="section-top">
             <div>
-              <h2>{ready ? "Ready for guests" : "Finish setup"}</h2>
+              <h2>
+                {!ready
+                  ? "Finish setup"
+                  : status === "offline"
+                    ? "Ready, but offline"
+                    : "Ready for guests"}
+              </h2>
               <p>
-                {ready
-                  ? "Your charger is connected and published."
-                  : "A few details before guests can charge."}
+                {!ready
+                  ? "A few details before guests can charge."
+                  : status === "offline"
+                    ? "Guests can’t charge until your charger reconnects."
+                    : "Your charger is connected and published."}
               </p>
             </div>
           </div>
-          {ready && (
+          {status === "offline" && (
+            <div className="charger-ready offline">
+              <span className="charger-ready-icon">
+                <WifiOff size={20} />
+              </span>
+              <div>
+                <strong>Your charger is offline.</strong>
+                <p>
+                  {ready
+                    ? "It isn’t connected to the network, so guests see it as offline and can’t start a session. Check its power and Wi-Fi, then refresh setup."
+                    : "It isn’t connected to the network. Check its power and Wi-Fi—it needs to be online before you can publish."}
+                </p>
+              </div>
+            </div>
+          )}
+          {ready && status !== "offline" && (
             <div className="charger-ready">
               <span className="charger-ready-icon">
                 <Check size={22} />
@@ -1776,5 +1819,27 @@ function ChargerSetup({
         </div>
       </div>
     </div>
+  );
+}
+function StatusBadge({
+  status,
+  detailed = false,
+}: {
+  status: ChargerStatus;
+  detailed?: boolean;
+}) {
+  // Cards stay quiet when we simply could not check; the charger view says so.
+  if (status === "unknown" && !detailed) return null;
+  return (
+    <span
+      className={`badge ${status === "online" ? "green-badge" : status === "offline" ? "offline-badge" : "neutral-badge"}`}
+    >
+      <span className="status-dot" />
+      {status === "online"
+        ? "Online"
+        : status === "offline"
+          ? "Offline"
+          : "Status unknown"}
+    </span>
   );
 }

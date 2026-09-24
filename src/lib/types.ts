@@ -1,3 +1,4 @@
+import type { ChargerStatus, GuestAvailability } from "./status";
 export type Property = {
   id: string;
   host_id: string;
@@ -92,6 +93,7 @@ export type DashboardData = {
   email: string;
   payoutsReady: boolean;
   stripeConnected: boolean;
+  status: Record<string, ChargerStatus>;
 };
 export type PublicProperty = Pick<
   Property,
@@ -105,4 +107,4 @@ export type PublicProperty = Pick<
   | "max_kw"
   | "rate_cents"
   | "hold_cents"
-> & { available: boolean; testMode: boolean };
+> & { availability: GuestAvailability; testMode: boolean };
