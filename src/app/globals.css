@@ -1797,6 +1797,7 @@ th:last-child {
   color: #758b6d;
 }
 .wizard-steps > div > span {
+  flex-shrink: 0;
   border-radius: 100%;
   width: 22px;
   height: 22px;
@@ -1883,6 +1884,83 @@ th:last-child {
 }
 .copy-field > .icon-button {
   margin: 0 5px;
+}
+.copy-field .connection-password {
+  font-family: monospace;
+  font-size: 16px;
+  letter-spacing: 0.06em;
+}
+.address-search {
+  position: relative;
+}
+.address-search > input {
+  width: 100%;
+}
+.address-search .fine-print {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.address-suggestions {
+  list-style: none;
+  padding: 5px;
+  margin: 5px 0 0;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #121a12;
+}
+.address-suggestions button {
+  display: flex;
+  align-items: flex-start;
+  text-align: left;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+.address-suggestions button svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--muted);
+}
+.address-suggestions button[aria-selected="true"],
+.address-suggestions button:hover {
+  background: #2a3625;
+}
+.maps-attribution {
+  display: block;
+  padding: 8px 10px;
+  font: 400 12px/1.5 sans-serif;
+  color: white;
+  white-space: nowrap;
+  text-align: right;
+}
+.onboarding-payouts {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #242f22;
+}
+.onboarding-payouts > svg {
+  flex-shrink: 0;
+  color: var(--coral);
+}
+.onboarding-payouts p {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+  margin: 8px 0 12px;
 }
 .sticker-preview {
   display: flex;

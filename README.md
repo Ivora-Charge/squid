@@ -41,6 +41,8 @@ npm run dev
 | `RESEND_FROM_EMAIL`                 | Sender on your verified domain, such as `Squid by Ivora <hello@squidcharge.io>`.              |
 | `IVORA_API_URL`                     | Ivora API origin. The supplied `.co` endpoint is preproduction.                               |
 | `IVORA_API_KEY`, `IVORA_TENANT_ID`  | Server-only credentials for Squid's shared fleet account.                                     |
+| `GOOGLE_MAPS_ADDRESS_API_KEY`       | Server-only Google key with Places API (New) and Time Zone API enabled.                       |
+| `OCPP_CREDENTIAL_KEY`               | Stable 32-byte encryption key as 64 hex characters; generate with `openssl rand -hex 32`.     |
 | `STRIPE_SECRET_KEY`                 | Squid's Stripe platform secret key. Start with test mode.                                     |
 | `STRIPE_WEBHOOK_SECRET`             | Signing secret for Squid's Stripe webhook endpoint.                                           |
 | `CRON_SECRET`                       | A random secret protecting scheduled reconciliation.                                          |
@@ -91,6 +93,12 @@ Squid verifies Stripe state on the server before starting a charger. After confi
 The API key needs the tenant inventory, station provisioning, tariff, operation, and external-funded charging-session permissions. Configure an active OCPP domain for the tenant in Ivora. Squid uses the API's connection URL or a **ready** domain's connection URL template; DNS verification alone is not sufficient.
 
 Hosts add a property, enter the station identity, OCPP URL, and password in their charger's configuration, then refresh setup. The station must be online and Stripe onboarding complete before its guest page can be published. One property currently represents one AC connector, up to 22 kW. Rate and authorization amounts are snapshotted for each session.
+
+Address suggestions fill the property's location and time zone automatically. The server confirms the selected US street address, signs the selection for that host, and validates it when saving. Hosts never enter coordinates or time zones. Search is authenticated, throttled, and uses Google autocomplete session tokens. Enable Places API (New) and Time Zone API on the Google key's project. Demo onboarding uses clearly labeled sample addresses and needs no Google key.
+
+New station identities use a shortened property name and a unique suffix, such as `bluebird-cabin-a1b2c3`, with at most 23 characters. Squid presets a random 16-character OCPP password using uppercase letters and digits without `I`, `O`, `0`, or `1`. The password is installed through Ivora's credentials API before setup completes. The `202609240001_charger_credentials.sql` migration stores it encrypted with AES-256-GCM in a service-only table. Keep `OCPP_CREDENTIAL_KEY` backed up and consistent across instances sharing this database; changing it prevents old passwords from being decrypted. Owners can retrieve their password from the authenticated setup dialog. Existing station identities and connection passwords stay valid; an existing charger can receive a preset through an explicit offline setup action.
+
+Hosts without ready Stripe payouts see a fourth onboarding step. Their charger is saved before Stripe opens, retries reuse the saved charger, and both Stripe return and refresh URLs reopen that charger's setup. Squid checks the actual account status before publishing. Preview the first-host flow at `/demo?onboarding=1`.
 
 The app connects chargers to Ivora's OCPP service. Vercel runs the web application and server routes; it does not host persistent OCPP WebSockets. API schema: [Ivora OpenAPI](https://api.ivoracharge.co/openapi.json).
 

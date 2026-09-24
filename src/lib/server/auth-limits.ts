@@ -68,3 +68,11 @@ export async function reserveGoogleSignIn(request: NextRequest) {
     "Too many sign-in attempts. Please try again in ten minutes.",
   );
 }
+export async function reserveAddressSearch(userId: string) {
+  await takeQuota(
+    `address:${digest(userId)}`,
+    120,
+    600,
+    "Please wait a few minutes before searching again.",
+  );
+}

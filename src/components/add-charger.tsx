@@ -1,35 +1,53 @@
 "use client";
 import { browserId } from "@/lib/browser-id";
 import { useState } from "react";
-import { ArrowRight, ArrowLeft, MapPin, Plug, Zap, Check } from "lucide-react";
+import {
+  ArrowRight,
+  ArrowLeft,
+  MapPin,
+  Plug,
+  Zap,
+  Check,
+  CreditCard,
+} from "lucide-react";
 import { Busy, ErrorMessage, Modal, post } from "./ui";
 import { money } from "@/lib/money";
 import type { Property } from "@/lib/types";
+import { AddressSearch } from "./address-search";
+import {
+  stationIdentity,
+  demoAddresses,
+  type AddressSelection,
+} from "@/lib/onboarding";
 export function AddCharger({
   demo,
+  payoutsReady,
+  stripeConnected,
   onClose,
   onAdd,
+  onSave,
 }: {
   demo: boolean;
+  payoutsReady: boolean;
+  stripeConnected: boolean;
   onClose: () => void;
   onAdd: (property: Property) => void;
+  onSave: (property: Property) => void;
 }) {
   const [step, setStep] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [id] = useState(browserId);
+  const [address, setAddress] = useState<AddressSelection | null>(null);
+  const [saved, setSaved] = useState<Property | null>(null);
+  const needsPayouts = !payoutsReady;
+  const lastStep = needsPayouts ? 3 : 2;
   const [form, setForm] = useState({
     name: "",
-    address: "",
-    city: "",
-    state: "",
-    latitude: "",
-    longitude: "",
     connector_type: "J1772",
     max_kw: "7.2",
     rate: "0.35",
     instructions: "Park by the charger, plug in, and make yourself at home.",
-    time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   });
   function field(name: keyof typeof form, value: string) {
     setForm((f) => ({ ...f, [name]: value }));
@@ -37,33 +55,41 @@ export function AddCharger({
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setError("");
-    if (step < 2) {
+    if (step === 0 && !address) {
+      setError("Choose your property address from the suggestions.");
+      return;
+    }
+    if (step < lastStep) {
       setStep(step + 1);
       return;
     }
     setBusy(true);
     try {
+      if (!address) throw new Error("Please select your property address.");
       const input = {
         id,
         name: form.name,
-        address: form.address,
-        city: form.city,
-        state: form.state.toUpperCase(),
-        latitude: Number(form.latitude),
-        longitude: Number(form.longitude),
-        time_zone: form.time_zone,
+        addressToken: address.token,
         connector_type: form.connector_type,
         max_kw: Number(form.max_kw),
         rate_cents: Math.round(Number(form.rate) * 100),
         instructions: form.instructions,
       };
-      if (demo) {
-        onAdd({
+      let property = saved;
+      if (!property && demo) {
+        const selected = demoAddresses.find((a) => a.id === address.token)!;
+        property = {
           ...input,
+          address: selected.address,
+          city: selected.city,
+          state: selected.state,
+          latitude: selected.latitude,
+          longitude: selected.longitude,
+          time_zone: selected.time_zone,
           host_id: "demo",
           slug: "demo",
           hold_cents: 2500,
-          station_name: `SQ-${id.slice(0, 6).toUpperCase()}`,
+          station_name: stationIdentity(form.name, id),
           station_id: 3,
           connector_id: 3,
           location_id: 3,
@@ -71,42 +97,37 @@ export function AddCharger({
           ocpp_url: null,
           published: true,
           created_at: new Date().toISOString(),
-        });
-      } else {
+        };
+      } else if (!property) {
         const result = await post<{ property: Property }>(
           "/api/host/properties",
           input,
         );
-        onAdd(result.property);
+        property = result.property;
       }
+      setSaved(property);
+      onSave(property);
+      if (needsPayouts && !demo) {
+        const result = await post<{ url: string }>("/api/host/connect", {
+          propertyId: property.id,
+        });
+        window.location.assign(result.url);
+      } else onAdd(property);
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setBusy(false);
     }
   }
-  function locate() {
-    if (!navigator.geolocation) {
-      setError(
-        "Location is unavailable in this browser. Enter the coordinates below.",
-      );
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      (p) => {
-        field("latitude", p.coords.latitude.toFixed(6));
-        field("longitude", p.coords.longitude.toFixed(6));
-      },
-      () =>
-        setError(
-          "We couldn’t get your location. Enter the property coordinates below.",
-        ),
-    );
-  }
   return (
     <Modal title="A new home for good energy" onClose={onClose}>
       <div className="wizard-steps">
-        {["Your place", "Your charger", "Your price"].map((label, i) => (
+        {[
+          "Your place",
+          "Your charger",
+          "Your price",
+          ...(needsPayouts ? ["Payouts"] : []),
+        ].map((label, i) => (
           <div className={step >= i ? "active" : ""} key={label}>
             <span>{step > i ? <Check size={13} /> : i + 1}</span>
             {label}
@@ -132,79 +153,11 @@ export function AddCharger({
                 required
               />
             </label>
-            <label>
-              Street address
-              <input
-                value={form.address}
-                onChange={(e) => field("address", e.target.value)}
-                placeholder="24 Pine Ridge Road"
-                required
-                minLength={3}
-                maxLength={120}
-              />
-            </label>
-            <div className="form-row">
-              <label>
-                City
-                <input
-                  value={form.city}
-                  onChange={(e) => field("city", e.target.value)}
-                  placeholder="Asheville"
-                  required
-                  minLength={2}
-                />
-              </label>
-              <label>
-                State
-                <input
-                  value={form.state}
-                  onChange={(e) => field("state", e.target.value)}
-                  placeholder="NC"
-                  minLength={2}
-                  maxLength={2}
-                  required
-                />
-              </label>
-            </div>
-            <div className="form-row">
-              <label>
-                Latitude
-                <input
-                  type="number"
-                  step="any"
-                  min="-90"
-                  max="90"
-                  value={form.latitude}
-                  onChange={(e) => field("latitude", e.target.value)}
-                  placeholder="35.5951"
-                  required
-                />
-              </label>
-              <label>
-                Longitude
-                <input
-                  type="number"
-                  step="any"
-                  min="-180"
-                  max="180"
-                  value={form.longitude}
-                  onChange={(e) => field("longitude", e.target.value)}
-                  placeholder="-82.5515"
-                  required
-                />
-              </label>
-            </div>
-            <button className="text-link" type="button" onClick={locate}>
-              <MapPin size={14} /> Use my current location
-            </button>
-            <label>
-              Time zone
-              <input
-                value={form.time_zone}
-                onChange={(e) => field("time_zone", e.target.value)}
-                required
-              />
-            </label>
+            <AddressSearch
+              demo={demo}
+              selection={address}
+              onSelect={setAddress}
+            />
           </>
         )}
         {step === 1 && (
@@ -217,6 +170,14 @@ export function AddCharger({
                 after this step.
               </p>
             </div>
+            <label>
+              Station identity
+              <input readOnly value={stationIdentity(form.name, id)} />
+            </label>
+            <p className="fine-print">
+              A short name for your charger’s connection settings. Your password
+              will be prepared automatically.
+            </p>
             <label>
               Connector type
               <select
@@ -256,6 +217,45 @@ export function AddCharger({
                 your charger’s app before publishing.
               </span>
             </div>
+          </>
+        )}
+        {step === 3 && needsPayouts && (
+          <>
+            <div className="form-intro">
+              <CreditCard />
+              <h3>A home for your earnings.</h3>
+              <p>
+                {stripeConnected
+                  ? "Finish your Stripe setup to receive charging payouts."
+                  : "Connect Stripe so your charging earnings reach your bank account."}
+              </p>
+            </div>
+            <div className="price-breakdown">
+              <p>
+                <span>You receive</span>
+                <strong>94% of each charge</strong>
+              </p>
+              <p>
+                <span>Squid fee</span>
+                <span>6%</span>
+              </p>
+            </div>
+            <p className="fine-print">
+              We’ll save your charger before opening Stripe. When you return,
+              your connection details will be ready. Guest payments stay off
+              until payouts and your charger are ready.
+            </p>
+            {saved && (
+              <div className="success-message" role="status">
+                <Check size={16} /> Your charger is saved. Continue to Stripe
+                whenever you’re ready.
+              </div>
+            )}
+            {demo && (
+              <div className="notice">
+                Demo payout setup. No Stripe account is created.
+              </div>
+            )}
           </>
         )}
         {step === 2 && (
@@ -318,21 +318,33 @@ export function AddCharger({
         )}
         <ErrorMessage message={error} />
         <div className="form-actions">
-          {step > 0 && (
+          {step > 0 && !saved && (
             <button
               className="button secondary"
               type="button"
+              disabled={busy}
               onClick={() => setStep(step - 1)}
             >
               <ArrowLeft size={16} /> Back
             </button>
           )}
-          <button className="button primary" disabled={busy}>
+          <button
+            className="button primary"
+            disabled={busy || (step === 0 && !address)}
+          >
             {busy ? (
               <Busy>Connecting…</Busy>
             ) : (
               <>
-                {step === 2 ? "Add charger" : "Continue"}
+                {step === 3
+                  ? demo
+                    ? "Finish demo setup"
+                    : saved
+                      ? "Continue to Stripe"
+                      : "Save & connect Stripe"
+                  : step === lastStep
+                    ? "Add charger"
+                    : "Continue"}
                 <ArrowRight size={16} />
               </>
             )}

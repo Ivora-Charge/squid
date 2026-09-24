@@ -12,22 +12,11 @@ import {
 import { payoutStatus } from "./stripe";
 import { HttpError } from "./security";
 import type { Property } from "../types";
+import { configureCredentials } from "./charger-credentials";
 export const propertyInput = z.object({
   id: z.uuid(),
   name: z.string().trim().min(2).max(80),
-  address: z.string().trim().min(3).max(120),
-  city: z.string().trim().min(2).max(120),
-  state: z.string().trim().length(2),
-  latitude: z.number().min(-90).max(90),
-  longitude: z.number().min(-180).max(180),
-  time_zone: z.string().refine((v) => {
-    try {
-      new Intl.DateTimeFormat("en-US", { timeZone: v });
-      return true;
-    } catch {
-      return false;
-    }
-  }),
+  addressToken: z.string().min(1).max(4000),
   rate_cents: z.number().int().min(1).max(500),
   max_kw: z.number().positive().max(22),
   connector_type: z.enum(["J1772", "NACS", "Type 2"]),
@@ -131,6 +120,7 @@ export async function provision(hostId: string, id: string): Promise<Property> {
       const url = await getOcppUrl(p.station_name).catch(() => null);
       if (url) await save({ ocpp_url: url });
     }
+    await configureCredentials(p);
     const station = await getStation(p.station_id!);
     if (station.connectors.length)
       await save({ connector_id: station.connectors[0].id });

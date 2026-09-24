@@ -72,6 +72,9 @@ describe("Supabase migration and row-level isolation", () => {
         /permission denied/,
       );
       await expect(
+        pg.query("select * from squid_charger_credentials"),
+      ).rejects.toThrow(/permission denied/);
+      await expect(
         pg.query("select squid_claim_lock('x',gen_random_uuid())"),
       ).rejects.toThrow(/permission denied/);
     } finally {

@@ -3,7 +3,10 @@ import { z } from "zod";
 import { failure, requireHost, sameOrigin } from "@/lib/server/security";
 import { ownedProperty, provision, publish } from "@/lib/server/properties";
 import { checked, db, withLock } from "@/lib/server/db";
-import { operation } from "@/lib/server/ivora";
+import {
+  seedCredentials,
+  configureCredentials,
+} from "@/lib/server/charger-credentials";
 export const maxDuration = 60;
 export async function POST(
   request: NextRequest,
@@ -18,10 +21,7 @@ export async function POST(
         z.object({ action: z.literal("resume") }),
         z.object({ action: z.literal("publish") }),
         z.object({ action: z.literal("pause") }),
-        z.object({
-          action: z.literal("credentials"),
-          password: z.string().regex(/^[a-zA-Z0-9*\-_=:+|@.]{16,40}$/),
-        }),
+        z.object({ action: z.literal("credentials") }).strict(),
       ])
       .parse(await request.json());
     const property = await ownedProperty(host.id, id);
@@ -39,18 +39,10 @@ export async function POST(
     if (input.action === "credentials") {
       if (!property.station_id)
         throw new Error("Charger setup is incomplete. Resume setup first.");
-      const result = await withLock(`property:${id}`, () =>
-        operation(
-          `${id}:credentials`,
-          `stations/${property.station_id}/credentials`,
-          { password: input.password },
-          "PUT",
-        ),
-      );
-      if (result.status !== "succeeded")
-        throw new Error(
-          "Charger setup is pending. Retry the same password to check the original operation.",
-        );
+      await withLock(`property:${id}`, async () => {
+        await seedCredentials(id);
+        await configureCredentials(property);
+      });
     }
     return NextResponse.json({ property: await ownedProperty(host.id, id) });
   } catch (error) {

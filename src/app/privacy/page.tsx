@@ -31,6 +31,16 @@ export default function Privacy() {
           and sign-in emails. Squid stores keyed digests of email and source
           addresses to limit repeated requests.
         </p>
+        <h2>Property address and charger setup</h2>
+        <p>
+          When you search for a property address, Google Maps receives the
+          address text you enter and returns suggestions and location details.
+          Squid saves your selected property address and location for charger
+          setup. Google handles these requests under its{" "}
+          <a href="https://policies.google.com/privacy">Privacy Policy</a>.
+          Charger connection passwords are stored encrypted and shown only to
+          the owning host.
+        </p>
         <h2>For guests</h2>
         <p>
           You do not need a Squid account. An HTTP-only cookie gives your
@@ -42,7 +52,7 @@ export default function Privacy() {
         <h2>Service providers</h2>
         <p>
           A typical deployment uses Vercel to host the application, Supabase for
-          authentication and data, Google for optional Google sign-in, Resend
+          authentication and data, Google for address lookup and optional sign-in, Resend
           for account emails, Stripe for payments, and Ivora for charger control
           and metering. Ivora receives non-secret payment references, not your
           card details or Stripe credentials.

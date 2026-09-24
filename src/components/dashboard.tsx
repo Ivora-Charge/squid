@@ -63,7 +63,10 @@ export function Dashboard({
   const [busy, setBusy] = useState(false);
   const [refund, setRefund] = useState<HostSession | null>(null);
   useEffect(() => {
-    const t = new URLSearchParams(window.location.search).get("tab");
+    const params = new URLSearchParams(window.location.search);
+    const t = params.get("tab");
+    const setup = initial.properties.find((p) => p.id === params.get("setup"));
+    if (setup && !demo) setManage(setup);
     if (
       t &&
       ["overview", "chargers", "sessions", "payouts", "settings"].includes(t)
@@ -113,7 +116,7 @@ export function Dashboard({
     url.searchParams.set("tab", t);
     history.replaceState(null, "", url);
   }
-  function added(p: Property) {
+  function saveProperty(p: Property) {
     setData((d) => {
       const next = {
         ...d,
@@ -126,6 +129,11 @@ export function Dashboard({
         );
       return next;
     });
+  }
+  function added(p: Property) {
+    saveProperty(p);
+    if (demo)
+      setData((d) => ({ ...d, payoutsReady: true, stripeConnected: true }));
     setAdd(false);
     if (!demo) setManage(p);
   }
@@ -838,7 +846,14 @@ export function Dashboard({
         </button>
       </nav>
       {add && (
-        <AddCharger demo={demo} onClose={() => setAdd(false)} onAdd={added} />
+        <AddCharger
+          demo={demo}
+          payoutsReady={data.payoutsReady}
+          stripeConnected={data.stripeConnected}
+          onClose={() => setAdd(false)}
+          onAdd={added}
+          onSave={saveProperty}
+        />
       )}{" "}
       {sticker && (
         <QRSticker
@@ -851,7 +866,14 @@ export function Dashboard({
         <ManageCharger
           property={manage}
           demo={demo}
-          onClose={() => setManage(null)}
+          payoutsReady={data.payoutsReady}
+          stripeConnected={data.stripeConnected}
+          onClose={() => {
+            setManage(null);
+            const url = new URL(window.location.href);
+            url.searchParams.delete("setup");
+            history.replaceState(null, "", url);
+          }}
           onUpdate={(p) => {
             setData((d) => {
               const next = {
@@ -1047,18 +1069,65 @@ function ScanIllustration() {
 function ManageCharger({
   property: p,
   demo,
+  payoutsReady,
+  stripeConnected,
   onClose,
   onUpdate,
 }: {
   property: Property;
   demo: boolean;
+  payoutsReady: boolean;
+  stripeConnected: boolean;
   onClose: () => void;
   onUpdate: (p: Property) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [password, setPassword] = useState("");
+  const [credentials, setCredentials] = useState<{
+    password: string | null;
+    pending: boolean;
+  } | null>(null);
   const [done, setDone] = useState("");
+  async function loadCredentials(signal?: AbortSignal) {
+    if (demo) {
+      setCredentials({ password: "DEMO2345DEMO6789", pending: false });
+      return;
+    }
+    const response = await fetch(`/api/host/properties/${p.id}/credentials`, {
+      cache: "no-store",
+      signal,
+    });
+    const data = await response.json();
+    if (!response.ok)
+      throw new Error(data.error || "Could not load the connection password.");
+    if (!signal?.aborted) setCredentials(data);
+  }
+  useEffect(() => {
+    const controller = new AbortController();
+    setCredentials(null);
+    void loadCredentials(controller.signal).catch((e) => {
+      if (!controller.signal.aborted) setError(e.message);
+    });
+    return () => controller.abort();
+  }, [p.id, demo]);
+  async function connectPayouts() {
+    setBusy(true);
+    setError("");
+    try {
+      if (demo) {
+        setDone("Demo payout setup. No Stripe account is created.");
+        return;
+      }
+      const { url } = await post<{ url: string }>("/api/host/connect", {
+        propertyId: p.id,
+      });
+      window.location.assign(url);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
   async function action(action: string) {
     setBusy(true);
     setError("");
@@ -1078,12 +1147,13 @@ function ManageCharger({
       } else {
         const result = await post<{ property: Property }>(
           `/api/host/properties/${p.id}`,
-          { action, ...(action === "credentials" ? { password } : {}) },
+          { action },
         );
         onUpdate(result.property);
+        await loadCredentials();
         setDone(
           action === "credentials"
-            ? "Connection password saved. Configure it in your charger’s app."
+            ? "Your preset password is ready to use in your charger’s app."
             : "Charger updated.",
         );
       }
@@ -1096,7 +1166,30 @@ function ManageCharger({
   return (
     <Modal title={p.name} onClose={onClose}>
       <div className="stack-form">
-        <p>Connect your charger, then publish its guest page.</p>
+        <p>
+          Copy these details into your charger’s OCPP settings, then publish its
+          guest page.
+        </p>
+        {!payoutsReady && (
+          <div className="onboarding-payouts">
+            <CreditCard size={20} />
+            <div>
+              <strong>Finish setting up your payouts</strong>
+              <p>
+                Your charger is saved. Stripe needs a few details before you can
+                accept guest payments.
+              </p>
+              <button
+                className="button secondary"
+                disabled={busy}
+                onClick={connectPayouts}
+              >
+                {stripeConnected ? "Continue Stripe setup" : "Connect Stripe"}
+                <ArrowUpRight size={16} />
+              </button>
+            </div>
+          </div>
+        )}
         <label>
           OCPP station identity
           <div className="copy-field">
@@ -1113,7 +1206,16 @@ function ManageCharger({
         {p.ocpp_url ? (
           <label>
             OCPP connection URL
-            <input value={p.ocpp_url} readOnly />
+            <div className="copy-field">
+              <input value={p.ocpp_url} readOnly />
+              <button
+                className="icon-button"
+                aria-label="Copy connection URL"
+                onClick={() => navigator.clipboard.writeText(p.ocpp_url!)}
+              >
+                <Copy size={17} />
+              </button>
+            </div>
           </label>
         ) : (
           <div className="notice">
@@ -1121,28 +1223,51 @@ function ManageCharger({
             contact your Squid operator if it’s still unavailable.
           </div>
         )}
-        <label>
-          Set an OCPP password
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="16–40 characters"
-            minLength={16}
-            maxLength={40}
-            autoComplete="new-password"
-          />
-        </label>
-        <button
-          className="button secondary"
-          disabled={busy || password.length < 16}
-          onClick={() => action("credentials")}
-        >
-          Save connection password
-        </button>
+        {credentials?.password ? (
+          <label>
+            Preset OCPP password
+            <div className="copy-field">
+              <input
+                className="connection-password"
+                value={credentials.password}
+                readOnly
+                spellCheck={false}
+                autoComplete="off"
+              />
+              <button
+                className="icon-button"
+                aria-label="Copy OCPP password"
+                onClick={() =>
+                  navigator.clipboard.writeText(credentials.password!)
+                }
+              >
+                <Copy size={17} />
+              </button>
+            </div>
+          </label>
+        ) : (
+          <div className="notice">
+            {credentials === null
+              ? "Loading your connection password…"
+              : credentials.pending
+                ? "Your preset password is being prepared."
+                : "This charger keeps its existing password. You can prepare a preset while it is offline."}
+          </div>
+        )}
+        {!credentials?.password && (
+          <button
+            className="button secondary"
+            disabled={busy || !credentials}
+            onClick={() => action("credentials")}
+          >
+            {credentials?.pending
+              ? "Retry password setup"
+              : "Prepare preset password"}
+          </button>
+        )}
         <p className="fine-print">
-          Set the password while your charger is offline, then enter the station
-          identity, connection URL, and password in its OCPP settings.
+          The preset uses 16 easy-to-read characters. Enter it exactly as shown.
+          If your charger asks for a username, use the station identity.
         </p>
         <ErrorMessage message={error} />
         {done && (
@@ -1161,7 +1286,7 @@ function ManageCharger({
           </button>
           <button
             className="button primary"
-            disabled={busy}
+            disabled={busy || (!p.published && !payoutsReady)}
             onClick={() => action(p.published ? "pause" : "publish")}
           >
             {p.published ? "Pause guest access" : "Publish charger"}

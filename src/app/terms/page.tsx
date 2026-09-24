@@ -38,6 +38,15 @@ export default function Terms() {
           requirements and payout schedule. A full refund reverses the host
           transfer and the application fee.
         </p>
+        <h2>Address search</h2>
+        <p>
+          Property address search uses Google Maps. Use of that feature is
+          subject to the{" "}
+          <a href="https://maps.google.com/help/terms_maps/">
+            Google Maps Terms of Service
+          </a>
+          .
+        </p>
         <h2>Compatibility and support</h2>
         <p>
           Check that the connector is suitable for your vehicle and follow the

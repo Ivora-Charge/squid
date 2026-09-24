@@ -201,12 +201,19 @@ test("host can add a demo charger and filter it", async ({
   await page
     .getByLabel("Property name", { exact: true })
     .fill("Bluebird Cabin");
-  await page.getByLabel("Street address").fill("12 Forest Lane");
-  await page.getByLabel("City", { exact: true }).fill("Asheville");
-  await page.getByLabel("State", { exact: true }).fill("NC");
-  await page.getByLabel("Latitude").fill("35.5951");
-  await page.getByLabel("Longitude").fill("-82.5515");
+  await page
+    .getByRole("combobox", { name: "Property address" })
+    .fill("12 Forest");
+  await page
+    .getByRole("option", { name: "12 Forest Lane, Asheville, NC" })
+    .click();
+  await expect(page.getByLabel("Latitude")).toHaveCount(0);
+  await expect(page.getByLabel("Longitude")).toHaveCount(0);
+  await expect(page.getByLabel("Time zone")).toHaveCount(0);
   await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(
+    page.getByLabel("Station identity", { exact: true }),
+  ).toHaveValue(/^bluebird-cabin-[a-f0-9]{6}$/);
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await page
     .getByRole("dialog")
@@ -226,6 +233,55 @@ test("host can add a demo charger and filter it", async ({
   await expect(
     page.getByRole("heading", { name: "The Weekender", exact: true }),
   ).not.toBeVisible();
+});
+test("new hosts get a payout step and editing an address clears its selection", async ({
+  page,
+}) => {
+  const writes: string[] = [];
+  page.on("request", (r) => {
+    if (r.method() === "POST") writes.push(r.url());
+  });
+  await page.goto("/demo?onboarding=1");
+  await page
+    .getByRole("button", { name: "Add a charger", exact: true })
+    .first()
+    .click();
+  await page
+    .getByLabel("Property name", { exact: true })
+    .fill("Bluebird Cabin");
+  const address = page.getByRole("combobox", { name: "Property address" });
+  await address.fill("12 Forest");
+  await page
+    .getByRole("option", { name: "12 Forest Lane, Asheville, NC" })
+    .click();
+  await address.fill("18 Ocean");
+  await expect(
+    page.getByRole("button", { name: "Continue", exact: true }),
+  ).toBeDisabled();
+  await page
+    .getByRole("option", { name: "18 Ocean Avenue, San Diego, CA" })
+    .waitFor();
+  await address.press("ArrowDown");
+  await address.press("Enter");
+  await expect(address).toHaveValue("18 Ocean Avenue, San Diego, CA");
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "A home for your earnings." }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page
+    .getByRole("button", { name: "Finish demo setup", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Bluebird Cabin" }),
+  ).toBeVisible();
+  expect(writes).toEqual([]);
 });
 test("public requests cannot control host chargers or private guest sessions", async ({
   request,
