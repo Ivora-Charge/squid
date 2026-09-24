@@ -157,7 +157,8 @@ export function GuestCharge({
                 We’ll authorize {money(p.hold_cents)} on your card. When
                 charging ends, we collect the final cost and release the rest.{" "}
                 We request a stop as you approach the hold amount. You can start
-                another session for more energy.
+                another session for more energy. Charges below $0.50 are waived,
+                with the full hold released.
               </p>
             </div>
           </div>

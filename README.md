@@ -86,7 +86,9 @@ stripe listen --forward-to localhost:3000/api/stripe/webhook
 # Put the emitted whsec_ value in STRIPE_WEBHOOK_SECRET.
 ```
 
-Squid verifies Stripe state on the server before starting a charger. After confirmed charging completion, it captures the immutable final Ivora bill and sets `application_fee_amount` to 6%, rounded to the nearest cent. For a $10.00 charge, the host receives $9.40 and Squid receives $0.60 before Stripe processing fees. Processing fees are paid by the platform. Full refunds reverse both the host transfer and application fee. See [Stripe destination charges](https://docs.stripe.com/connect/destination-charges) and [manual capture](https://docs.stripe.com/api/payment_intents/capture).
+Squid verifies Stripe state on the server before starting a charger. After confirmed charging completion, it captures the immutable final Ivora bill and sets `application_fee_amount` to 6%, rounded to the nearest cent. Bills below Stripe's $0.50 USD minimum are waived: Squid releases the entire hold and records $0 collected, while preserving Ivora's metered bill. For a $10.00 charge, the host receives $9.40 and Squid receives $0.60 before Stripe processing fees. Processing fees are paid by the platform. Full refunds reverse both the host transfer and application fee. See [Stripe destination charges](https://docs.stripe.com/connect/destination-charges) and [manual capture](https://docs.stripe.com/api/payment_intents/capture).
+
+Unplugging ends the physical transaction; reconciliation finalizes its bill and completes payment automatically. Ivora's completed session response may omit live usage, so retries settle from its immutable final bill without regressing to a starting state. A concurrent reconciliation returns the latest saved session, including any queued stop request. Guest polling keeps confirmed readings during transient failures and displays a retry notice only after repeated failures.
 
 ### Ivora and OCPP
 

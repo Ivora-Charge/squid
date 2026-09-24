@@ -22,6 +22,7 @@ export default function Terms() {
           card authorization reserves funds; your final charge is based on
           measured energy. The unused part of the authorization is released. The
           timing of that release appearing on your account depends on your bank.
+          Charges below $0.50 are waived and the full authorization is released.
         </p>
         <h2>Ending a session</h2>
         <p>

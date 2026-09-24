@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Zap,
@@ -25,9 +25,22 @@ export function SessionView({
 }) {
   const [s, setSession] = useState(initial);
   const [error, setError] = useState("");
+  const [syncDelayed, setSyncDelayed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [interactive, setInteractive] = useState(false);
   const [seconds, setSeconds] = useState(0);
+  const latest = useRef(initial);
+  const version = useRef(0);
+  const stopping = useRef(false);
+  function receive(session: PublicSession) {
+    latest.current = session;
+    setSession(session);
+    if (
+      session.stop_requested ||
+      ["completed", "canceled", "refunded"].includes(session.status)
+    )
+      setError("");
+  }
   useEffect(() => {
     // The server-rendered controls must wait for their click handlers to load.
     setInteractive(true);
@@ -48,23 +61,55 @@ export function SessionView({
     }
   }, [demo, s.status]);
   useEffect(() => {
-    if (demo || ["completed", "canceled", "refunded"].includes(s.status))
-      return;
+    if (demo) return;
     let canceled = false;
     let timer: ReturnType<typeof setTimeout>;
+    let controller: AbortController | undefined;
+    let failures = 0;
     async function tick() {
+      if (
+        canceled ||
+        ["completed", "canceled", "refunded"].includes(latest.current.status)
+      )
+        return;
+      if (stopping.current) {
+        timer = setTimeout(tick, 1000);
+        return;
+      }
+      const requestVersion = version.current;
+      controller = new AbortController();
+      const timeout = setTimeout(() => controller?.abort(), 20000);
       try {
-        const result = await post<{ session: PublicSession }>(
-          `/api/sessions/${initial.id}`,
-          { action: "sync" },
-        );
-        if (!canceled) {
-          setSession(result.session);
-          setError("");
+        const response = await fetch(`/api/sessions/${initial.id}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "sync" }),
+          signal: controller.signal,
+        });
+        const result = await response.json();
+        if ([401, 403, 404].includes(response.status)) {
+          if (!canceled && requestVersion === version.current) {
+            setError(
+              result.error ||
+                "Please reopen this session in your charging browser.",
+            );
+            canceled = true;
+          }
+          return;
         }
-      } catch (e) {
-        if (!canceled) setError((e as Error).message);
+        if (!response.ok) throw new Error("Session refresh failed");
+        if (!canceled && requestVersion === version.current) {
+          receive(result.session);
+          failures = 0;
+          setSyncDelayed(false);
+        }
+      } catch {
+        if (!canceled && requestVersion === version.current) {
+          failures++;
+          if (failures >= 3) setSyncDelayed(true);
+        }
       } finally {
+        clearTimeout(timeout);
         if (!canceled) timer = setTimeout(tick, 6000);
       }
     }
@@ -72,8 +117,9 @@ export function SessionView({
     return () => {
       canceled = true;
       clearTimeout(timer);
+      controller?.abort();
     };
-  }, [demo, initial.id, s.status]);
+  }, [demo, initial.id]);
   useEffect(() => {
     if (["completed", "canceled", "refunded"].includes(s.status)) {
       const key = sessionStorage.getItem(`squid-session:${s.id}`);
@@ -81,6 +127,8 @@ export function SessionView({
     }
   }, [s.id, s.status]);
   async function stop() {
+    version.current++;
+    stopping.current = true;
     setBusy(true);
     setError("");
     try {
@@ -96,11 +144,13 @@ export function SessionView({
           `/api/sessions/${s.id}`,
           { action: "stop" },
         );
-        setSession(result.session);
+        receive(result.session);
+        setSyncDelayed(false);
       }
     } catch (e) {
       setError((e as Error).message);
     } finally {
+      stopping.current = false;
       setBusy(false);
     }
   }
@@ -202,6 +252,12 @@ export function SessionView({
           </>
         )}
         <ErrorMessage message={error} />
+        {syncDelayed && (
+          <p className="notice" role="status">
+            Live updates are taking longer than usual. We’ll keep retrying. Your
+            last confirmed session details are shown above.
+          </p>
+        )}
         {pending && s.checkout_url && (
           <a href={s.checkout_url} className="button primary full large">
             Authorize {money(s.hold_cents)} hold <ArrowRight size={18} />
@@ -212,7 +268,12 @@ export function SessionView({
         ) && (
           <button
             className={`button ${charging ? "secondary" : "subtle"} full`}
-            disabled={!interactive || busy || s.status === "stopping"}
+            disabled={
+              !interactive ||
+              busy ||
+              s.stop_requested ||
+              s.status === "stopping"
+            }
             onClick={stop}
           >
             {busy ? (
@@ -221,8 +282,10 @@ export function SessionView({
               <>
                 <Square size={15} />
                 {pending
-                  ? "Cancel this session"
-                  : s.status === "stopping"
+                  ? s.stop_requested
+                    ? "Canceling your session…"
+                    : "Cancel this session"
+                  : s.status === "stopping" || s.stop_requested
                     ? "Waiting for charger to stop…"
                     : "Finish charging"}
               </>
@@ -235,7 +298,9 @@ export function SessionView({
               <ShieldCheck size={18} />
               {demo
                 ? "Demo receipt. No payment was made."
-                : `Paid ${money(s.total_cents ?? 0)}. The unused hold has been released.`}
+                : s.total_cents === 0
+                  ? "No charge. Your full card hold has been released."
+                  : `Paid ${money(s.total_cents ?? 0)}. The unused hold has been released.`}
             </div>
             <button
               className="button secondary full"

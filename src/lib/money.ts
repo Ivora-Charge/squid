@@ -1,4 +1,5 @@
 export const PLATFORM_FEE_PERCENT = 6;
+export const MINIMUM_CHARGE_CENTS = 50;
 export function platformFee(cents: number) {
   if (!Number.isSafeInteger(cents) || cents < 0)
     throw new Error("Invalid money amount");

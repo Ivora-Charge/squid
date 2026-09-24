@@ -71,6 +71,7 @@ export type PublicSession = Pick<
   | "created_at"
   | "started_at"
   | "ended_at"
+  | "stop_requested"
 >;
 export type HostSession = Pick<
   ChargeSession,

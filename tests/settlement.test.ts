@@ -304,6 +304,180 @@ describe("external-funded charging settlement", () => {
     expect(mock.session.status).toBe("completed");
     expect(mock.capture).not.toHaveBeenCalled();
   });
+  it("settles a finalized session after Ivora stops returning live usage", async () => {
+    Object.assign(mock.external, {
+      status: "completed",
+      usage: null,
+      bill: {
+        id: "bill_one",
+        status: "final",
+        total_minor: 243,
+        energy_kwh: "6.941",
+        transaction_id: 10,
+      },
+    });
+    mock.session.started_at = "2026-09-23T10:00:00Z";
+    mock.session.ended_at = "2026-09-23T11:00:00Z";
+    await reconcile("session-one");
+    expect(mock.session).toMatchObject({
+      status: "completed",
+      total_cents: 243,
+      ended_at: "2026-09-23T11:00:00Z",
+    });
+    expect(mock.operation).not.toHaveBeenCalled();
+    expect(
+      mock.write.mock.calls.some(([, path]) => path.endsWith("/finalize")),
+    ).toBe(false);
+    expect(mock.capture).toHaveBeenCalledTimes(1);
+  });
+  it("recovers a failed capture without restarting a finalized session", async () => {
+    mock.external.usage.active = false;
+    mock.external.usage.ended_at = "2026-09-23T11:00:00Z";
+    mock.capture.mockRejectedValueOnce(new Error("Temporary processor outage"));
+    await expect(reconcile("session-one")).rejects.toThrow(
+      "Temporary processor outage",
+    );
+    expect(mock.session.status).toBe("settling");
+    Object.assign(mock.external, {
+      status: "completed",
+      usage: null,
+      bill: {
+        id: "bill_one",
+        status: "final",
+        total_minor: 243,
+        energy_kwh: "6.941",
+        transaction_id: 10,
+      },
+    });
+    await reconcile("session-one");
+    expect(mock.session.status).toBe("completed");
+    expect(mock.operation).not.toHaveBeenCalled();
+    expect(
+      mock.capture.mock.calls.map((call) => call[2].idempotencyKey),
+    ).toEqual(["session-one:capture", "session-one:capture"]);
+  });
+  it("recovers a successful capture with missing live usage without charging twice", async () => {
+    Object.assign(mock.external, {
+      status: "completed",
+      usage: null,
+      bill: {
+        id: "bill_one",
+        status: "final",
+        total_minor: 243,
+        energy_kwh: "6.941",
+        transaction_id: 10,
+      },
+    });
+    Object.assign(mock.pi, {
+      status: "succeeded",
+      amount_received: 243,
+      application_fee_amount: 15,
+    });
+    await reconcile("session-one");
+    expect(mock.session.status).toBe("completed");
+    expect(mock.capture).not.toHaveBeenCalled();
+    expect(mock.operation).not.toHaveBeenCalled();
+  });
+  it.each([0, 1, 49])(
+    "releases the hold for a finalized %i-cent bill",
+    async (total) => {
+      Object.assign(mock.external, {
+        status: "completed",
+        usage: null,
+        bill: {
+          id: "bill_one",
+          status: "final",
+          total_minor: total,
+          energy_kwh: "0.028",
+          transaction_id: 10,
+        },
+      });
+      await reconcile("session-one");
+      expect(mock.session).toMatchObject({
+        status: "completed",
+        total_cents: 0,
+        fee_cents: 0,
+        energy_kwh: 0.028,
+      });
+      expect(mock.external.bill.total_minor).toBe(total);
+      expect(mock.cancel).toHaveBeenCalledWith(
+        "pi_test",
+        {},
+        { idempotencyKey: "id:session-one:cancel" },
+      );
+      expect(mock.capture).not.toHaveBeenCalled();
+      expect(mock.write).toHaveBeenCalledWith(
+        "session-one:report:release",
+        "charging-sessions/ext_one/settlement-reports",
+        expect.anything(),
+        expect.objectContaining({ kind: "release", amount_minor: 0 }),
+      );
+    },
+  );
+  it("captures a bill exactly at the minimum and still takes the 6% fee", async () => {
+    Object.assign(mock.external, {
+      status: "completed",
+      usage: null,
+      bill: {
+        id: "bill_one",
+        status: "final",
+        total_minor: 50,
+        energy_kwh: "1.429",
+        transaction_id: 10,
+      },
+    });
+    await reconcile("session-one");
+    expect(mock.session).toMatchObject({
+      status: "completed",
+      total_cents: 50,
+      fee_cents: 3,
+    });
+    expect(mock.capture).toHaveBeenCalledWith(
+      "pi_test",
+      { amount_to_capture: 50, application_fee_amount: 3 },
+      { idempotencyKey: "session-one:capture" },
+    );
+    expect(mock.cancel).not.toHaveBeenCalled();
+  });
+  it("recovers a short-session hold release after its acknowledgement was lost", async () => {
+    Object.assign(mock.external, {
+      status: "completed",
+      usage: null,
+      bill: {
+        id: "bill_one",
+        status: "final",
+        total_minor: 1,
+        energy_kwh: "0.028",
+        transaction_id: 10,
+      },
+    });
+    mock.pi.status = "canceled";
+    await reconcile("session-one");
+    expect(mock.session).toMatchObject({
+      status: "completed",
+      total_cents: 0,
+      fee_cents: 0,
+    });
+    expect(mock.cancel).not.toHaveBeenCalled();
+    expect(mock.capture).not.toHaveBeenCalled();
+  });
+  it("does not settle a finalized bill that lacks a physical transaction reference", async () => {
+    Object.assign(mock.external, {
+      status: "completed",
+      usage: null,
+      bill: {
+        id: "bill_one",
+        status: "final",
+        total_minor: 243,
+        energy_kwh: "6.941",
+        transaction_id: null,
+      },
+    });
+    await reconcile("session-one");
+    expect(mock.session.status).toBe("review");
+    expect(mock.capture).not.toHaveBeenCalled();
+    expect(mock.operation).not.toHaveBeenCalled();
+  });
   it("does not silently cap an overage or capture it beyond authorization", async () => {
     mock.external.usage.active = false;
     mock.external.bill = {
