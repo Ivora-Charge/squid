@@ -373,3 +373,29 @@ test("clicking a charger card opens its own dashboard with a QR download prompt"
     page.getByRole("heading", { name: "Your place. Good energy." }),
   ).toBeVisible();
 });
+test("host edits charger settings from its dashboard and can sign out", async ({
+  page,
+  isMobile,
+}) => {
+  await page.goto("/demo?charger=demo-cabin");
+  await expect(
+    page.getByRole("heading", { name: "Charger settings" }),
+  ).toBeVisible();
+  const save = page.getByRole("button", { name: "Save changes" });
+  await expect(save).toBeDisabled();
+  await page
+    .getByLabel("Property name", { exact: true })
+    .fill("The Weekender Loft");
+  await page.getByLabel("Price per kWh (USD)").fill("0.42");
+  await save.click();
+  await expect(page.getByRole("status")).toContainText("Saved");
+  await expect(
+    page.getByRole("heading", { name: "The Weekender Loft", level: 1 }),
+  ).toBeVisible();
+  await expect(page.getByText("$0.42 / kWh")).toBeVisible();
+  await page
+    .locator(isMobile ? ".dashboard-topbar" : ".sidebar")
+    .getByRole("button", { name: "Leave demo" })
+    .click();
+  await expect(page).toHaveURL(`${origin}/`);
+});

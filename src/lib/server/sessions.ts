@@ -143,6 +143,10 @@ export async function createCheckout(slug: string, requestId: string) {
       await ensureCheckout(prior as ChargeSession, p as Property);
       return loadSession(prior.id);
     }
+    if (!p.tariff_id)
+      throw new Error(
+        "This charger’s price is being updated. Please try again in a moment.",
+      );
     const account = await payoutStatus(p.host_id);
     if (!account.ready || !account.id)
       throw new Error(

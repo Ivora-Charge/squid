@@ -22,6 +22,29 @@ export const propertyInput = z.object({
   connector_type: z.enum(["J1772", "NACS", "Type 2"]),
   instructions: z.string().trim().max(500),
 });
+export const propertyUpdate = propertyInput.omit({
+  id: true,
+  addressToken: true,
+});
+export async function updateProperty(
+  hostId: string,
+  id: string,
+  fields: z.infer<typeof propertyUpdate>,
+): Promise<Property> {
+  const current = await ownedProperty(hostId, id);
+  const repriced = fields.rate_cents !== current.rate_cents;
+  // A new price needs a new Ivora tariff. Clearing tariff_id blocks guest
+  // starts until provision() has created it, so no session bills at a stale rate.
+  checked(
+    await db()
+      .from("squid_properties")
+      .update({ ...fields, ...(repriced ? { tariff_id: null } : {}) })
+      .eq("id", id)
+      .eq("host_id", hostId),
+  );
+  if (repriced) await provision(hostId, id);
+  return ownedProperty(hostId, id);
+}
 export async function ownedProperty(
   hostId: string,
   id: string,
@@ -97,7 +120,7 @@ export async function provision(hostId: string, id: string): Promise<Property> {
       });
     }
     if (!p.tariff_id) {
-      const op = await operation(`${id}:tariff`, "tariffs", {
+      const op = await operation(`${id}:tariff:${p.rate_cents}`, "tariffs", {
         currency: "USD",
         rate_minor_per_kwh: p.rate_cents,
         authorization_minor: p.hold_cents,

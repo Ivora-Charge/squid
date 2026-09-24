@@ -172,6 +172,10 @@ export function Dashboard({
     setAdd(false);
     openCharger(p);
   }
+  async function signOut() {
+    if (!demo) await post("/auth/logout", {});
+    window.location.assign("/");
+  }
   async function connect() {
     setBusy(true);
     setError("");
@@ -311,6 +315,10 @@ export function Dashboard({
             <Settings size={18} />
             <span>Settings</span>
           </button>
+          <button className="side-link" onClick={signOut}>
+            <LogOut size={18} />
+            <span>{demo ? "Leave demo" : "Sign out"}</span>
+          </button>
           <button className="profile" onClick={() => switchTab("settings")}>
             <span className="avatar">
               {demo ? "AL" : data.email.slice(0, 2).toUpperCase()}
@@ -360,6 +368,14 @@ export function Dashboard({
               onClick={() => setNotifications(!notifications)}
             >
               <Bell size={19} />
+            </button>
+            <button
+              className="icon-button"
+              aria-label={demo ? "Leave demo" : "Sign out"}
+              title={demo ? "Leave demo" : "Sign out"}
+              onClick={signOut}
+            >
+              <LogOut size={19} />
             </button>
           </div>
           {notifications && (
@@ -750,13 +766,7 @@ export function Dashboard({
                         Set or change your password <ArrowUpRight size={15} />
                       </Link>
                     )}
-                    <button
-                      className="button secondary"
-                      onClick={async () => {
-                        if (!demo) await post("/auth/logout", {});
-                        window.location.assign("/");
-                      }}
-                    >
+                    <button className="button secondary" onClick={signOut}>
                       <LogOut size={16} />
                       {demo ? "Leave demo" : "Sign out"}
                     </button>
@@ -1160,7 +1170,167 @@ function ChargerView({
           />
         </section>
       </div>
+      <ChargerSettings
+        key={p.id}
+        property={p}
+        demo={demo}
+        onUpdate={onUpdate}
+      />
     </div>
+  );
+}
+function ChargerSettings({
+  property: p,
+  demo,
+  onUpdate,
+}: {
+  property: Property;
+  demo: boolean;
+  onUpdate: (p: Property) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [done, setDone] = useState("");
+  const [form, setForm] = useState({
+    name: p.name,
+    connector_type: p.connector_type,
+    max_kw: String(p.max_kw),
+    rate: (p.rate_cents / 100).toFixed(2),
+    instructions: p.instructions ?? "",
+  });
+  function field(name: keyof typeof form, value: string) {
+    setForm((f) => ({ ...f, [name]: value }));
+    setDone("");
+  }
+  const fields = {
+    name: form.name.trim(),
+    connector_type: form.connector_type,
+    max_kw: Number(form.max_kw),
+    rate_cents: Math.round(Number(form.rate) * 100),
+    instructions: form.instructions.trim(),
+  };
+  const changed =
+    fields.name !== p.name ||
+    fields.connector_type !== p.connector_type ||
+    fields.max_kw !== Number(p.max_kw) ||
+    fields.rate_cents !== p.rate_cents ||
+    fields.instructions !== (p.instructions ?? "");
+  const repriced = fields.rate_cents !== p.rate_cents;
+  async function save(event: React.FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    setDone("");
+    try {
+      if (demo) onUpdate({ ...p, ...fields });
+      else {
+        const result = await post<{ property: Property }>(
+          `/api/host/properties/${p.id}`,
+          { action: "update", ...fields },
+        );
+        onUpdate(result.property);
+      }
+      setDone(
+        repriced
+          ? "Saved. New sessions use your updated price."
+          : "Charger settings saved.",
+      );
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <section className="panel settings-card charger-settings">
+      <div className="section-top">
+        <div>
+          <h2>Charger settings</h2>
+          <p>Change what guests see and pay at this charger.</p>
+        </div>
+        <Settings size={20} />
+      </div>
+      <form className="stack-form settings-form" onSubmit={save}>
+        <div className="settings-form-grid">
+          <label>
+            Property name
+            <input
+              value={form.name}
+              onChange={(e) => field("name", e.target.value)}
+              minLength={2}
+              maxLength={80}
+              required
+            />
+          </label>
+          <label>
+            Connector type
+            <select
+              value={form.connector_type}
+              onChange={(e) => field("connector_type", e.target.value)}
+            >
+              <option>J1772</option>
+              <option>NACS</option>
+              <option>Type 2</option>
+            </select>
+          </label>
+          <label>
+            Maximum power (kW)
+            <input
+              type="number"
+              step="0.1"
+              min="1"
+              max="22"
+              required
+              value={form.max_kw}
+              onChange={(e) => field("max_kw", e.target.value)}
+            />
+          </label>
+          <label>
+            Price per kWh (USD)
+            <div className="price-input">
+              <span>$</span>
+              <input
+                type="number"
+                step="0.01"
+                min="0.01"
+                max="5"
+                required
+                value={form.rate}
+                onChange={(e) => field("rate", e.target.value)}
+              />
+              <span>/ kWh</span>
+            </div>
+          </label>
+        </div>
+        <label>
+          A note for guests
+          <textarea
+            rows={3}
+            maxLength={500}
+            value={form.instructions}
+            onChange={(e) => field("instructions", e.target.value)}
+          />
+        </label>
+        {repriced && !demo && (
+          <div className="notice">
+            Changing the price creates a new tariff for this charger. Sessions
+            already in progress keep their original price.
+          </div>
+        )}
+        <ErrorMessage message={error} />
+        {done && (
+          <div className="success-message" role="status">
+            <Check size={16} />
+            {done}
+          </div>
+        )}
+        <div className="form-actions">
+          <button className="button primary" disabled={busy || !changed}>
+            {busy ? <Busy>Saving…</Busy> : "Save changes"}
+          </button>
+        </div>
+      </form>
+    </section>
   );
 }
 function Stat({

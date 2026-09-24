@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { failure, requireHost, sameOrigin } from "@/lib/server/security";
-import { ownedProperty, provision, publish } from "@/lib/server/properties";
+import {
+  ownedProperty,
+  propertyUpdate,
+  provision,
+  publish,
+  updateProperty,
+} from "@/lib/server/properties";
 import { checked, db, withLock } from "@/lib/server/db";
 import {
   seedCredentials,
@@ -22,9 +28,16 @@ export async function POST(
         z.object({ action: z.literal("publish") }),
         z.object({ action: z.literal("pause") }),
         z.object({ action: z.literal("credentials") }).strict(),
+        propertyUpdate.extend({ action: z.literal("update") }).strict(),
       ])
       .parse(await request.json());
     const property = await ownedProperty(host.id, id);
+    if (input.action === "update") {
+      const { action: _action, ...fields } = input;
+      return NextResponse.json({
+        property: await updateProperty(host.id, id, fields),
+      });
+    }
     if (input.action === "resume")
       return NextResponse.json({ property: await provision(host.id, id) });
     if (input.action === "publish") await publish(host.id, id);
