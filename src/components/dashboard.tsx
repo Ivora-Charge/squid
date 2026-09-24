@@ -50,6 +50,7 @@ export function Dashboard({
   demo?: boolean;
 }) {
   const router = useRouter();
+  const [ready, setReady] = useState(false);
   const [data, setData] = useState(initial);
   const [tab, setTab] = useState<Tab>("overview");
   const [days, setDays] = useState(30);
@@ -86,6 +87,7 @@ export function Dashboard({
           setData((d) => ({ ...d, properties: saved }));
       } catch {}
     }
+    setReady(true);
   }, [demo]);
   useEffect(() => {
     if (!demo) setData(initial);
@@ -359,7 +361,11 @@ export function Dashboard({
                   : "Simple tools for a more welcoming stay."}
               </p>
             </div>
-            <button className="button primary" onClick={() => setAdd(true)}>
+            <button
+              className="button primary"
+              disabled={!ready}
+              onClick={() => setAdd(true)}
+            >
               <Plus size={18} /> Add a charger
             </button>
           </div>
@@ -451,6 +457,7 @@ export function Dashboard({
                   </div>
                   <button
                     className="button secondary"
+                    disabled={!ready}
                     onClick={() =>
                       data.properties[0]
                         ? setSticker(data.properties[0])
@@ -551,6 +558,7 @@ export function Dashboard({
                 ))}
                 <button
                   className="add-charger-card"
+                  disabled={!ready}
                   onClick={() => setAdd(true)}
                 >
                   <span>

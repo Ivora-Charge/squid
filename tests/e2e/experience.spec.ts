@@ -189,6 +189,33 @@ test("host generates a downloadable QR sticker with a real guest URL", async ({
   await page.getByRole("button", { name: "Close dialog" }).click();
   await expect(page.getByRole("dialog")).not.toBeVisible();
 });
+test("charger onboarding waits for JavaScript before accepting a click", async ({
+  page,
+}) => {
+  let releaseScripts!: () => void;
+  const scriptsReady = new Promise<void>((resolve) => {
+    releaseScripts = resolve;
+  });
+  await page.route("**/_next/**/*.js", async (route) => {
+    await scriptsReady;
+    await route.continue();
+  });
+  const add = page
+    .getByRole("button", { name: "Add a charger", exact: true })
+    .first();
+  try {
+    await page.goto("/demo?onboarding=1", { waitUntil: "commit" });
+    await expect(add).toBeVisible();
+    await expect(add).toBeDisabled();
+  } finally {
+    releaseScripts();
+  }
+  await expect(add).toBeEnabled();
+  await add.click();
+  await expect(
+    page.getByRole("heading", { name: "Tell us about your place." }),
+  ).toBeVisible();
+});
 test("host can add a demo charger and filter it", async ({
   page,
   isMobile,
