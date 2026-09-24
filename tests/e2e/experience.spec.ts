@@ -141,6 +141,31 @@ test("guest can preview pricing, charge, and receive a demo receipt without real
     ),
   ).toBe(true);
 });
+test("session controls wait for their JavaScript before accepting a stop", async ({
+  page,
+}) => {
+  let releaseScripts!: () => void;
+  const scriptsReady = new Promise<void>((resolve) => {
+    releaseScripts = resolve;
+  });
+  await page.route("**/_next/**/*.js", async (route) => {
+    await scriptsReady;
+    await route.continue();
+  });
+  const finish = page.getByRole("button", { name: "Finish charging" });
+  try {
+    await page.goto("/session/demo", { waitUntil: "commit" });
+    await expect(finish).toBeVisible();
+    await expect(finish).toBeDisabled();
+  } finally {
+    releaseScripts();
+  }
+  await expect(finish).toBeEnabled();
+  await finish.click();
+  await expect(
+    page.getByRole("heading", { name: "Ready for your next adventure." }),
+  ).toBeVisible();
+});
 test("host generates a downloadable QR sticker with a real guest URL", async ({
   page,
 }) => {

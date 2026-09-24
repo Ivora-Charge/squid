@@ -26,8 +26,11 @@ export function SessionView({
   const [s, setSession] = useState(initial);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [interactive, setInteractive] = useState(false);
   const [seconds, setSeconds] = useState(0);
   useEffect(() => {
+    // The server-rendered controls must wait for their click handlers to load.
+    setInteractive(true);
     const timer = setInterval(() => setSeconds((n) => n + 1), 1000);
     return () => clearInterval(timer);
   }, []);
@@ -209,7 +212,7 @@ export function SessionView({
         ) && (
           <button
             className={`button ${charging ? "secondary" : "subtle"} full`}
-            disabled={busy || s.status === "stopping"}
+            disabled={!interactive || busy || s.status === "stopping"}
             onClick={stop}
           >
             {busy ? (
@@ -236,6 +239,7 @@ export function SessionView({
             </div>
             <button
               className="button secondary full"
+              disabled={!interactive}
               onClick={() => window.print()}
             >
               <Download size={16} /> Save receipt
