@@ -145,3 +145,25 @@ describe("Supabase migration and row-level isolation", () => {
     }
   });
 });
+describe("price per kWh", () => {
+  const premium = "20000000-0000-4000-8000-000000000002";
+  const insert = (id: string, station: string, rate: number) =>
+    pg.query(
+      `insert into squid_properties(id,host_id,name,address,city,state,latitude,longitude,station_name,rate_cents) values($1,$2,'Premium cabin','2 Main St','Asheville','NC',35,-82,$3,$4)`,
+      [id, a, station, rate],
+    );
+  it("has no ceiling but must stay positive", async () => {
+    await pg.exec("reset role");
+    await insert(premium, "sq-premium", 1250);
+    expect(
+      (
+        await pg.query("select rate_cents from squid_properties where id=$1", [
+          premium,
+        ])
+      ).rows,
+    ).toEqual([{ rate_cents: 1250 }]);
+    await expect(
+      insert("20000000-0000-4000-8000-000000000003", "sq-free", 0),
+    ).rejects.toThrow(/rate_cents_check/);
+  });
+});

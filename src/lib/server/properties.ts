@@ -17,7 +17,8 @@ export const propertyInput = z.object({
   id: z.uuid(),
   name: z.string().trim().min(2).max(80),
   addressToken: z.string().min(1).max(4000),
-  rate_cents: z.number().int().min(1).max(500),
+  // No price ceiling; the bound only keeps the value inside a Postgres integer.
+  rate_cents: z.number().int().min(1).max(2_147_483_647),
   max_kw: z.number().positive().max(22),
   connector_type: z.enum(["J1772", "NACS", "Type 2"]),
   instructions: z.string().trim().max(500),

@@ -155,3 +155,28 @@ it("rejects fields outside the allowed schema", async () => {
   ).toBe(400);
   expect(mocks.updates).not.toHaveBeenCalled();
 });
+it("accepts any positive price, with no ceiling", async () => {
+  mocks.listAll.mockResolvedValue([
+    {
+      id: 8,
+      currency: "USD",
+      rate_minor_per_kwh: 1250,
+      authorization_minor: 2500,
+    },
+  ]);
+  const result = await update({
+    action: "update",
+    ...fields,
+    rate_cents: 1250,
+  });
+  expect(result.status).toBe(200);
+  expect(result.body.property).toMatchObject({
+    rate_cents: 1250,
+    tariff_id: 8,
+  });
+  expect(mocks.operation).toHaveBeenCalledWith(
+    `${property}:tariff:1250`,
+    "tariffs",
+    expect.objectContaining({ rate_minor_per_kwh: 1250 }),
+  );
+});

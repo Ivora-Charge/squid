@@ -276,7 +276,6 @@ export function AddCharger({
                   type="number"
                   step="0.01"
                   min="0.01"
-                  max="5"
                   value={form.rate}
                   onChange={(e) => field("rate", e.target.value)}
                   required
