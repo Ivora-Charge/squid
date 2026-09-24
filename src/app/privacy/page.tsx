@@ -52,10 +52,10 @@ export default function Privacy() {
         <h2>Service providers</h2>
         <p>
           A typical deployment uses Vercel to host the application, Supabase for
-          authentication and data, Google for address lookup and optional sign-in, Resend
-          for account emails, Stripe for payments, and Ivora for charger control
-          and metering. Ivora receives non-secret payment references, not your
-          card details or Stripe credentials.
+          authentication and data, Google for address lookup and optional
+          sign-in, Resend for account emails, Stripe for payments, and Ivora for
+          charger control and metering. Ivora receives non-secret payment
+          references, not your card details or Stripe credentials.
         </p>
         <h2>The demo</h2>
         <p>
