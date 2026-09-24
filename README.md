@@ -10,7 +10,7 @@ This is an Apache-2.0 reference application for the Ivora API. One Squid operato
 
 ## Try it locally
 
-Requires Node.js 22+ and npm. No credentials are needed for the interactive demo.
+Requires Node.js 22 and npm. No credentials are needed for the interactive demo.
 
 ```sh
 npm ci
@@ -96,7 +96,7 @@ The app connects chargers to Ivora's OCPP service. Vercel runs the web applicati
 
 ## Deploy on Vercel
 
-1. Import this repository with the Next.js preset and Node.js 22+.
+1. Import this repository with the Next.js preset and Node.js 22.x, matching the pinned runtime and CI.
 2. Set the environment variables above for the intended environment. Use separate Supabase, Stripe, and Ivora test resources for previews.
 3. Apply all Supabase migrations. Set `NEXT_PUBLIC_APP_URL` to the canonical HTTPS origin and add its Supabase callback and confirmation URLs. Configure the Resend sender if using custom email delivery.
 4. Register the Stripe webhook against that origin and set its signing secret.
@@ -106,6 +106,22 @@ The app connects chargers to Ivora's OCPP service. Vercel runs the web applicati
 The every-minute job requires Vercel Pro or Enterprise under the current [Cron limits](https://vercel.com/docs/cron-jobs/usage-and-pricing). For a demo on Hobby, remove the cron entry. For real sessions, supply an external scheduler every minute with `Authorization: Bearer <CRON_SECRET>`; guest polling alone is insufficient because guests can close their browser.
 
 Reconciliation processes ten sessions per invocation, oldest first. This is a small-fleet reference implementation, not an unbounded job queue. Monitor session age and increase scheduling capacity before growing the fleet.
+
+### Squid preproduction
+
+The `preproduction` branch deploys to [www.squidcharge.dev](https://www.squidcharge.dev) through the Vercel project `squid`. Make deployment changes on this branch and push to `origin/preproduction`.
+
+In this project's **Settings → Environments → Production**, Branch Tracking is set to `preproduction`. Vercel calls the domain-serving environment **Production**, even though Squid uses it for preproduction with Stripe test mode and Ivora's `.co` API. Put this site's credentials in that Vercel environment. This also enables the every-minute reconciliation cron; Vercel does not run cron jobs on Preview deployments. See [Vercel Git deployments](https://vercel.com/docs/git) and [Cron Jobs](https://vercel.com/docs/cron-jobs).
+
+Set `NEXT_PUBLIC_APP_URL=https://www.squidcharge.dev`. Register the Stripe test webhook at `https://www.squidcharge.dev/api/stripe/webhook`. In Supabase Auth URL Configuration, set the Site URL to that origin and allow:
+
+```text
+https://www.squidcharge.dev/auth/callback
+https://www.squidcharge.dev/auth/callback?next=/login/reset
+https://www.squidcharge.dev/login/confirm
+```
+
+Keep any LAN callbacks needed for local development. Store secrets in Vercel and the ignored local `.env`; `SUPABASE_DB_URL` is only needed locally for migrations. A future live deployment should use its own Vercel project and live service credentials.
 
 ## Verification
 
