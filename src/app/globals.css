@@ -3807,12 +3807,58 @@ input[type="range"] {
 .charger-settings {
   margin-bottom: 33px;
 }
-.charger-settings > .section-top > svg {
-  color: var(--muted);
+.charger-settings > .section-top {
+  margin-bottom: 20px;
+}
+.charger-settings > .section-top > .button {
   flex-shrink: 0;
 }
-.settings-form {
-  margin-top: 18px;
+.charger-settings > .success-message {
+  margin-bottom: 18px;
+}
+.settings-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 18px;
+  margin: 0;
+}
+.settings-summary > div {
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #1f281f;
+}
+.settings-summary > .full-width {
+  grid-column: 1 / -1;
+}
+.settings-summary dt {
+  font-size: 9px;
+  font-weight: 550;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.settings-summary dd {
+  margin: 7px 0 0;
+  font-size: 15px;
+  font-weight: 550;
+  letter-spacing: -0.3px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.settings-summary dd small {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--muted);
+}
+.settings-summary .settings-note {
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1.7;
+  color: #cfd9c4;
+  white-space: pre-line;
 }
 .settings-form-grid {
   display: grid;
@@ -3820,7 +3866,11 @@ input[type="range"] {
   gap: 14px 18px;
 }
 @media (max-width: 650px) {
+  .settings-summary,
   .settings-form-grid {
     grid-template-columns: 1fr;
+  }
+  .charger-settings > .section-top {
+    flex-wrap: wrap;
   }
 }

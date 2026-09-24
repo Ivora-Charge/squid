@@ -25,6 +25,7 @@ import {
   Copy,
   Check,
   LogOut,
+  PenLine,
   SlidersHorizontal,
   CreditCard,
   Code2,
@@ -1188,9 +1189,88 @@ function ChargerSettings({
   demo: boolean;
   onUpdate: (p: Property) => void;
 }) {
+  const [editing, setEditing] = useState(false);
+  const [saved, setSaved] = useState("");
+  return (
+    <section className="panel settings-card charger-settings">
+      <div className="section-top">
+        <div>
+          <h2>Charger settings</h2>
+          <p>What guests see and pay at this charger.</p>
+        </div>
+        <button
+          className="button secondary small-button"
+          onClick={() => {
+            setSaved("");
+            setEditing(true);
+          }}
+        >
+          <PenLine size={15} /> Edit settings
+        </button>
+      </div>
+      {saved && (
+        <div className="success-message" role="status">
+          <Check size={16} />
+          {saved}
+        </div>
+      )}
+      <dl className="settings-summary">
+        <div>
+          <dt>Property name</dt>
+          <dd>{p.name}</dd>
+        </div>
+        <div>
+          <dt>Connector type</dt>
+          <dd>{p.connector_type}</dd>
+        </div>
+        <div>
+          <dt>Maximum power</dt>
+          <dd>
+            {p.max_kw} <small>kW</small>
+          </dd>
+        </div>
+        <div>
+          <dt>Price per kWh</dt>
+          <dd>
+            {money(p.rate_cents)} <small>/ kWh</small>
+          </dd>
+        </div>
+        <div className="full-width">
+          <dt>Note for guests</dt>
+          <dd className="settings-note">
+            {p.instructions ||
+              "No note yet. Add one so guests know where to park and plug in."}
+          </dd>
+        </div>
+      </dl>
+      {editing && (
+        <EditCharger
+          property={p}
+          demo={demo}
+          onClose={() => setEditing(false)}
+          onSaved={(next, message) => {
+            onUpdate(next);
+            setSaved(message);
+            setEditing(false);
+          }}
+        />
+      )}
+    </section>
+  );
+}
+function EditCharger({
+  property: p,
+  demo,
+  onClose,
+  onSaved,
+}: {
+  property: Property;
+  demo: boolean;
+  onClose: () => void;
+  onSaved: (p: Property, message: string) => void;
+}) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [done, setDone] = useState("");
   const [form, setForm] = useState({
     name: p.name,
     connector_type: p.connector_type,
@@ -1200,7 +1280,6 @@ function ChargerSettings({
   });
   function field(name: keyof typeof form, value: string) {
     setForm((f) => ({ ...f, [name]: value }));
-    setDone("");
   }
   const fields = {
     name: form.name.trim(),
@@ -1220,17 +1299,17 @@ function ChargerSettings({
     event.preventDefault();
     setBusy(true);
     setError("");
-    setDone("");
     try {
-      if (demo) onUpdate({ ...p, ...fields });
-      else {
-        const result = await post<{ property: Property }>(
-          `/api/host/properties/${p.id}`,
-          { action: "update", ...fields },
-        );
-        onUpdate(result.property);
-      }
-      setDone(
+      const next = demo
+        ? { ...p, ...fields }
+        : (
+            await post<{ property: Property }>(`/api/host/properties/${p.id}`, {
+              action: "update",
+              ...fields,
+            })
+          ).property;
+      onSaved(
+        next,
         repriced
           ? "Saved. New sessions use your updated price."
           : "Charger settings saved.",
@@ -1242,15 +1321,12 @@ function ChargerSettings({
     }
   }
   return (
-    <section className="panel settings-card charger-settings">
-      <div className="section-top">
-        <div>
-          <h2>Charger settings</h2>
-          <p>Change what guests see and pay at this charger.</p>
-        </div>
-        <Settings size={20} />
-      </div>
-      <form className="stack-form settings-form" onSubmit={save}>
+    <Modal title="Edit charger settings" onClose={onClose}>
+      <p className="modal-description">
+        Changes show on your guest page right away. Sessions already in progress
+        keep their original price.
+      </p>
+      <form className="stack-form" onSubmit={save}>
         <div className="settings-form-grid">
           <label>
             Property name
@@ -1260,6 +1336,7 @@ function ChargerSettings({
               minLength={2}
               maxLength={80}
               required
+              autoFocus
             />
           </label>
           <label>
@@ -1313,24 +1390,34 @@ function ChargerSettings({
         </label>
         {repriced && !demo && (
           <div className="notice">
-            Changing the price creates a new tariff for this charger. Sessions
-            already in progress keep their original price.
+            <Zap size={18} />
+            <span>
+              A new price creates a new tariff for this charger, so saving takes
+              a few seconds.
+            </span>
+          </div>
+        )}
+        {demo && (
+          <div className="notice">
+            Demo mode: changes are saved only in your browser.
           </div>
         )}
         <ErrorMessage message={error} />
-        {done && (
-          <div className="success-message" role="status">
-            <Check size={16} />
-            {done}
-          </div>
-        )}
         <div className="form-actions">
+          <button
+            type="button"
+            className="button secondary"
+            disabled={busy}
+            onClick={onClose}
+          >
+            Cancel
+          </button>
           <button className="button primary" disabled={busy || !changed}>
             {busy ? <Busy>Saving…</Busy> : "Save changes"}
           </button>
         </div>
       </form>
-    </section>
+    </Modal>
   );
 }
 function Stat({

@@ -373,26 +373,41 @@ test("clicking a charger card opens its own dashboard with a QR download prompt"
     page.getByRole("heading", { name: "Your place. Good energy." }),
   ).toBeVisible();
 });
-test("host edits charger settings from its dashboard and can sign out", async ({
+test("host edits charger settings in a modal and can sign out", async ({
   page,
   isMobile,
 }) => {
   await page.goto("/demo?charger=demo-cabin");
+  const settings = page.locator(".charger-settings");
   await expect(
-    page.getByRole("heading", { name: "Charger settings" }),
+    settings.getByRole("heading", { name: "Charger settings" }),
   ).toBeVisible();
-  const save = page.getByRole("button", { name: "Save changes" });
+  await expect(
+    settings.getByText("The Weekender", { exact: true }),
+  ).toBeVisible();
+  await expect(settings.getByRole("textbox")).toHaveCount(0);
+  await settings.getByRole("button", { name: "Edit settings" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(
+    dialog.getByRole("heading", { name: "Edit charger settings" }),
+  ).toBeVisible();
+  const save = dialog.getByRole("button", { name: "Save changes" });
   await expect(save).toBeDisabled();
-  await page
+  await dialog
     .getByLabel("Property name", { exact: true })
     .fill("The Weekender Loft");
-  await page.getByLabel("Price per kWh (USD)").fill("0.42");
+  await dialog.getByLabel("Price per kWh (USD)").fill("0.42");
   await save.click();
-  await expect(page.getByRole("status")).toContainText("Saved");
+  await expect(dialog).not.toBeVisible();
+  await expect(settings.getByRole("status")).toContainText("Saved");
+  await expect(settings.getByText("$0.42 / kWh")).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "The Weekender Loft", level: 1 }),
   ).toBeVisible();
-  await expect(page.getByText("$0.42 / kWh")).toBeVisible();
+  await expect(page.locator(".charger-meta")).toContainText("$0.42 / kWh");
+  await settings.getByRole("button", { name: "Edit settings" }).click();
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).not.toBeVisible();
   await page
     .locator(isMobile ? ".dashboard-topbar" : ".sidebar")
     .getByRole("button", { name: "Leave demo" })
