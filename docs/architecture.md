@@ -53,6 +53,8 @@ Amounts use integer US cents. Squid saves the host destination, rate, tariff, an
 
 External-funded Ivora sessions associate charging with Squid's verified external payment. No Ivora payment service or payment flow is created. A final capture requires inactive matched usage, a final bill for that same transaction, and a total within the authorization. The application fee, Squid's 6% plus Stripe's processing fee (2.9% + 30¢) passed through to the host, is calculated from this final total, not the hold.
 
+Ivora webhooks (`charging_session.status_changed`, `bill.finalized`) trigger reconciliation of the matching session after a signed, deduplicated acknowledgement; the cron remains the safety net. Inventory creates are synchronous and carry an `external_reference`, so provisioning adopts existing records after a lost response instead of matching by name.
+
 `awaiting_payment → starting → charging → stopping → settling → completed` is the normal path. Physical and processor observations determine transitions. `canceled` means no payable charging was started; a zero-cost completed transaction receives a zero-cost receipt. `refunded` requires a confirmed successful refund. `review` reserves the connector when the outcome needs attention.
 
 ## Request durability

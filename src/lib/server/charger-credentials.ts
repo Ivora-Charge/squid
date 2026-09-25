@@ -2,7 +2,7 @@ import "server-only";
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { checked, db } from "./db";
 import { required } from "./config";
-import { getStation, operation } from "./ivora";
+import { IvoraError, forget, operation, rejectionCode } from "./ivora";
 import { HttpError } from "./security";
 import type { Property } from "../types";
 
@@ -82,24 +82,28 @@ export async function configureCredentials(p: Property) {
       409,
       "Finish registering the charger before preparing its password.",
     );
-  const attempted = checked(
-    await db()
-      .from("squid_operations")
-      .select("key")
-      .eq("key", `${p.id}:preset-credentials`)
-      .maybeSingle(),
-  );
-  if (!attempted && (await getStation(p.station_id)).online)
-    throw new HttpError(
-      409,
-      "Disconnect your charger before preparing its connection password.",
+  // Ivora stores the password for an offline charger's next connection and
+  // pushes it to a connected OCPP 2.0.1 charger; only a connected OCPP 1.6
+  // charger is rejected, so no online pre-check is needed.
+  const key = `${p.id}:preset-credentials`;
+  let result;
+  try {
+    result = await operation(
+      key,
+      `stations/${p.station_id}/credentials`,
+      { password: decryptPassword(saved.encrypted_password, p.id) },
+      "PUT",
     );
-  const result = await operation(
-    `${p.id}:preset-credentials`,
-    `stations/${p.station_id}/credentials`,
-    { password: decryptPassword(saved.encrypted_password, p.id) },
-    "PUT",
-  );
+  } catch (error) {
+    if (error instanceof IvoraError && error.code === "station_online")
+      throw disconnectFirst();
+    throw error;
+  }
+  if (rejectionCode(result) === "station_online") {
+    // A rejection never reached the charger; let the next attempt dispatch again.
+    await forget(key);
+    throw disconnectFirst();
+  }
   if (result.status !== "succeeded")
     throw new HttpError(
       503,
@@ -110,5 +114,11 @@ export async function configureCredentials(p: Property) {
       .from("squid_charger_credentials")
       .update({ configured: true })
       .eq("property_id", p.id),
+  );
+}
+function disconnectFirst() {
+  return new HttpError(
+    409,
+    "Disconnect your charger before preparing its connection password.",
   );
 }

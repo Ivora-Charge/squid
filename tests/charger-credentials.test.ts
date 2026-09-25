@@ -3,8 +3,8 @@ import type { Property } from "@/lib/types";
 const mocks = vi.hoisted(() => ({
   rows: new Map<string, { encrypted_password: string; configured: boolean }>(),
   attempts: new Set<string>(),
-  station: vi.fn(),
   operation: vi.fn(),
+  forget: vi.fn(),
 }));
 vi.mock("@/lib/server/db", () => ({
   db: () => ({
@@ -47,9 +47,10 @@ vi.mock("@/lib/server/db", () => ({
   },
   user: async () => null,
 }));
-vi.mock("@/lib/server/ivora", () => ({
-  getStation: mocks.station,
+vi.mock("@/lib/server/ivora", async (original) => ({
+  ...(await original<typeof import("@/lib/server/ivora")>()),
   operation: mocks.operation,
+  forget: mocks.forget,
 }));
 import {
   chargerCredentials,
@@ -68,8 +69,11 @@ beforeEach(() => {
   mocks.rows.clear();
   mocks.attempts.clear();
   vi.clearAllMocks();
-  mocks.station.mockResolvedValue({ online: false });
-  mocks.operation.mockResolvedValue({ status: "succeeded" });
+  mocks.operation.mockResolvedValue({
+    id: "op_1",
+    status: "succeeded",
+    result: { applied: "stored" },
+  });
 });
 afterEach(() => vi.unstubAllEnvs());
 describe("preset charger credentials", () => {
@@ -109,10 +113,13 @@ describe("preset charger credentials", () => {
     await configureCredentials(property);
     expect(mocks.operation).toHaveBeenCalledTimes(1);
   });
-  it("recovers a previously dispatched credential update even if the charger is now online", async () => {
+  it("presets a connected OCPP 2.0.1 charger, which Ivora pushes over OCPP", async () => {
     await seedCredentials(property.id);
-    mocks.attempts.add(`${property.id}:preset-credentials`);
-    mocks.station.mockResolvedValue({ online: true });
+    mocks.operation.mockResolvedValue({
+      id: "op_1",
+      status: "succeeded",
+      result: { applied: "pushed" },
+    });
     await configureCredentials(property);
     expect(mocks.operation).toHaveBeenCalledWith(
       `${property.id}:preset-credentials`,
@@ -122,12 +129,32 @@ describe("preset charger credentials", () => {
     );
     expect((await chargerCredentials(property.id)).password).toHaveLength(16);
   });
-  it("does not change existing or online charger credentials incidentally", async () => {
+  it("leaves a connected OCPP 1.6 charger alone and lets the host retry after unplugging", async () => {
     await configureCredentials(property);
     expect(mocks.operation).not.toHaveBeenCalled();
     await seedCredentials(property.id);
-    mocks.station.mockResolvedValue({ online: true });
+    mocks.operation.mockResolvedValueOnce({
+      id: "op_1",
+      status: "rejected",
+      result: { error: { code: "station_online", message: "Connected" } },
+    });
     await expect(configureCredentials(property)).rejects.toThrow(/Disconnect/);
-    expect(mocks.operation).not.toHaveBeenCalled();
+    expect(mocks.forget).toHaveBeenCalledWith(
+      `${property.id}:preset-credentials`,
+    );
+    expect(await chargerCredentials(property.id)).toEqual({
+      password: null,
+      pending: true,
+    });
+    await configureCredentials(property);
+    expect((await chargerCredentials(property.id)).password).toHaveLength(16);
+  });
+  it("maps an HTTP station_online rejection the same way", async () => {
+    await seedCredentials(property.id);
+    const { IvoraError } = await import("@/lib/server/ivora");
+    mocks.operation.mockRejectedValueOnce(
+      new IvoraError(409, "station_online", "Connected"),
+    );
+    await expect(configureCredentials(property)).rejects.toThrow(/Disconnect/);
   });
 });

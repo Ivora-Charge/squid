@@ -31,21 +31,22 @@ npm run check:setup
 npm run dev
 ```
 
-| Variable                            | Purpose                                                                                       |
-| ----------------------------------- | --------------------------------------------------------------------------------------------- |
-| `NEXT_PUBLIC_APP_URL`               | Canonical application origin, including your local port. Use HTTPS in production.             |
-| `SUPABASE_URL`, `SUPABASE_ANON_KEY` | Supabase project and public auth key.                                                         |
-| `SUPABASE_SERVICE_ROLE_KEY`         | Server-only administrative key. An anon key cannot replace it.                                |
-| `SUPABASE_DB_URL`                   | Only needed to run the migration command. Use the direct or session pooler connection string. |
-| `RESEND_API_KEY`                    | Optional server-only key for Squid-branded sign-in emails.                                    |
-| `RESEND_FROM_EMAIL`                 | Sender on your verified domain, such as `Squid by Ivora <hello@squidcharge.io>`.              |
-| `IVORA_API_URL`                     | Ivora API origin. The supplied `.co` endpoint is preproduction.                               |
-| `IVORA_API_KEY`, `IVORA_TENANT_ID`  | Server-only credentials for Squid's shared fleet account.                                     |
-| `GOOGLE_MAPS_ADDRESS_API_KEY`       | Server-only Google key with Places API (New) and Time Zone API enabled.                       |
-| `OCPP_CREDENTIAL_KEY`               | Stable 32-byte encryption key as 64 hex characters; generate with `openssl rand -hex 32`.     |
-| `STRIPE_SECRET_KEY`                 | Squid's Stripe platform secret key. Start with test mode.                                     |
-| `STRIPE_WEBHOOK_SECRET`             | Signing secret for Squid's Stripe webhook endpoint.                                           |
-| `CRON_SECRET`                       | A random secret protecting scheduled reconciliation.                                          |
+| Variable                            | Purpose                                                                                           |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `NEXT_PUBLIC_APP_URL`               | Canonical application origin, including your local port. Use HTTPS in production.                 |
+| `SUPABASE_URL`, `SUPABASE_ANON_KEY` | Supabase project and public auth key.                                                             |
+| `SUPABASE_SERVICE_ROLE_KEY`         | Server-only administrative key. An anon key cannot replace it.                                    |
+| `SUPABASE_DB_URL`                   | Only needed to run the migration command. Use the direct or session pooler connection string.     |
+| `RESEND_API_KEY`                    | Optional server-only key for Squid-branded sign-in emails.                                        |
+| `RESEND_FROM_EMAIL`                 | Sender on your verified domain, such as `Squid by Ivora <hello@squidcharge.io>`.                  |
+| `IVORA_API_URL`                     | Ivora API origin. The supplied `.co` endpoint is preproduction.                                   |
+| `IVORA_API_KEY`, `IVORA_TENANT_ID`  | Server-only credentials for Squid's shared fleet account.                                         |
+| `IVORA_WEBHOOK_SECRET`              | Signing secret printed once by `npm run ivora:webhook -- register <url>`. Enables Ivora webhooks. |
+| `GOOGLE_MAPS_ADDRESS_API_KEY`       | Server-only Google key with Places API (New) and Time Zone API enabled.                           |
+| `OCPP_CREDENTIAL_KEY`               | Stable 32-byte encryption key as 64 hex characters; generate with `openssl rand -hex 32`.         |
+| `STRIPE_SECRET_KEY`                 | Squid's Stripe platform secret key. Start with test mode.                                         |
+| `STRIPE_WEBHOOK_SECRET`             | Signing secret for Squid's Stripe webhook endpoint.                                               |
+| `CRON_SECRET`                       | A random secret protecting scheduled reconciliation.                                              |
 
 ### Supabase
 
@@ -92,7 +93,7 @@ Unplugging ends the physical transaction; reconciliation finalizes its bill and 
 
 ### Ivora and OCPP
 
-The API key needs the tenant inventory, station provisioning, tariff, operation, and external-funded charging-session permissions. Configure an active OCPP domain for the tenant in Ivora. Squid uses the API's connection URL or a **ready** domain's connection URL template; DNS verification alone is not sufficient.
+The API key needs the tenant inventory, station provisioning, tariff, operation, and external-funded charging-session permissions. Squid registers each location, station, and tariff with an `external_reference` derived from the property, so a retry after a lost response adopts the existing record instead of matching names. Each registered station returns its OCPP connection URL; a custom OCPP domain, if configured in Ivora, publishes its own. Registering the webhook additionally needs `webhooks:write`.
 
 Hosts add a property, enter the station identity, OCPP URL, and password in their charger's configuration, then refresh setup. The station must be online and Stripe onboarding complete before its guest page can be published. One property currently represents one AC connector, up to 22 kW. Rate and authorization amounts are snapshotted for each session.
 
@@ -103,6 +104,10 @@ New station identities use a shortened property name and a unique suffix, such a
 Hosts without ready Stripe payouts see a fourth onboarding step. Their charger is saved before Stripe opens, retries reuse the saved charger, and both Stripe return and refresh URLs reopen that charger's setup. Squid checks the actual account status before publishing. Preview the first-host flow at `/demo?onboarding=1`.
 
 The app connects chargers to Ivora's OCPP service. Vercel runs the web application and server routes; it does not host persistent OCPP WebSockets. API schema: [Ivora OpenAPI](https://api.ivoracharge.co/openapi.json).
+
+### Ivora webhooks
+
+Ivora pushes signed `charging_session.status_changed`, `bill.finalized`, and `operation.completed` events to `/api/ivora/webhook`, and while a subscription is active it observes started sessions itself about every 15 seconds. Squid verifies the `Ivora-Signature` HMAC, records each event id in `squid_ivora_events` so redeliveries are acknowledged once, and reconciles the affected session after acknowledging. Register the deployed endpoint once with `npm run ivora:webhook -- register https://<your-domain>/api/ivora/webhook`, store the printed `IVORA_WEBHOOK_SECRET` in that deployment, then confirm with `npm run ivora:webhook -- test <id>` and `deliveries <id>`. The every-minute reconciliation cron remains the safety net for missed deliveries and Stripe-side state.
 
 ## Deploy on Vercel
 

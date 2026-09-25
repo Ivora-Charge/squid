@@ -5,8 +5,7 @@ const host = "10000000-0000-4000-8000-000000000001",
 const mocks = vi.hoisted(() => ({
   user: vi.fn(),
   updates: vi.fn(),
-  operation: vi.fn(),
-  listAll: vi.fn(),
+  create: vi.fn(),
   getStation: vi.fn(),
   row: {} as Record<string, unknown>,
 }));
@@ -38,13 +37,10 @@ vi.mock("@/lib/server/db", () => ({
     return value.data;
   },
 }));
-vi.mock("@/lib/server/ivora", () => ({
-  getOcppUrl: vi.fn(),
+vi.mock("@/lib/server/ivora", async (original) => ({
+  ...(await original<typeof import("@/lib/server/ivora")>()),
+  createResource: mocks.create,
   getStation: mocks.getStation,
-  ivora: vi.fn(),
-  listAll: mocks.listAll,
-  operation: mocks.operation,
-  tenantPath: (p: string) => p,
 }));
 vi.mock("@/lib/server/stripe", () => ({ payoutStatus: vi.fn() }));
 vi.mock("@/lib/server/charger-credentials", () => ({
@@ -57,6 +53,8 @@ beforeEach(() => {
   vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://squid.example");
   vi.stubEnv("SUPABASE_URL", "https://supabase.example");
   vi.stubEnv("SUPABASE_ANON_KEY", "test-anon");
+  vi.stubEnv("IVORA_API_KEY", "iv_test_fixture");
+  vi.stubEnv("IVORA_TENANT_ID", "18");
   mocks.user.mockResolvedValue({ id: host, email: "host@example.invalid" });
   Object.keys(mocks.row).forEach((k) => delete mocks.row[k]);
   Object.assign(mocks.row, {
@@ -76,21 +74,12 @@ beforeEach(() => {
     ocpp_url: "wss://ocpp.example/weekender-abc123",
     published: true,
   });
-  mocks.operation.mockResolvedValue({ id: 9, status: "succeeded" });
-  mocks.listAll.mockResolvedValue([
-    {
-      id: 3,
-      currency: "USD",
-      rate_minor_per_kwh: 35,
-      authorization_minor: 2500,
-    },
-    {
-      id: 7,
-      currency: "USD",
-      rate_minor_per_kwh: 42,
-      authorization_minor: 2500,
-    },
-  ]);
+  mocks.create.mockImplementation(async (_key: string, resource: string) => ({
+    id: resource === "tariffs" ? 7 : 99,
+    currency: "USD",
+    rate_minor_per_kwh: 42,
+    authorization_minor: 2500,
+  }));
   mocks.getStation.mockResolvedValue({
     id: 3,
     online: true,
@@ -129,9 +118,9 @@ it("saves charger details without touching the tariff when the price is unchange
   expect(result.status).toBe(200);
   expect(result.body.property).toMatchObject({ ...fields, tariff_id: 3 });
   expect(mocks.updates).toHaveBeenCalledWith(fields);
-  expect(mocks.operation).not.toHaveBeenCalled();
+  expect(mocks.create).not.toHaveBeenCalled();
 });
-it("clears the tariff and re-provisions when the price changes", async () => {
+it("clears the tariff and creates a new one synchronously when the price changes", async () => {
   const result = await update({ action: "update", ...fields, rate_cents: 42 });
   expect(result.status).toBe(200);
   expect(mocks.updates).toHaveBeenCalledWith({
@@ -139,10 +128,17 @@ it("clears the tariff and re-provisions when the price changes", async () => {
     rate_cents: 42,
     tariff_id: null,
   });
-  expect(mocks.operation).toHaveBeenCalledWith(
-    `${property}:tariff:42`,
+  expect(mocks.create).toHaveBeenCalledTimes(1);
+  expect(mocks.create).toHaveBeenCalledWith(
+    `${property}:tariff:42:v2`,
     "tariffs",
-    expect.objectContaining({ rate_minor_per_kwh: 42 }),
+    expect.anything(),
+    {
+      currency: "USD",
+      rate_minor_per_kwh: 42,
+      authorization_minor: 2500,
+      external_reference: `property:${property}:rate:42`,
+    },
   );
   expect(result.body.property).toMatchObject({ rate_cents: 42, tariff_id: 7 });
 });
@@ -156,27 +152,20 @@ it("rejects fields outside the allowed schema", async () => {
   expect(mocks.updates).not.toHaveBeenCalled();
 });
 it("accepts any positive price, with no ceiling", async () => {
-  mocks.listAll.mockResolvedValue([
-    {
-      id: 8,
-      currency: "USD",
-      rate_minor_per_kwh: 1250,
-      authorization_minor: 2500,
-    },
-  ]);
   const result = await update({
     action: "update",
     ...fields,
     rate_cents: 1250,
   });
   expect(result.status).toBe(200);
-  expect(result.body.property).toMatchObject({
-    rate_cents: 1250,
-    tariff_id: 8,
-  });
-  expect(mocks.operation).toHaveBeenCalledWith(
-    `${property}:tariff:1250`,
+  expect(mocks.create).toHaveBeenCalledWith(
+    `${property}:tariff:1250:v2`,
     "tariffs",
+    expect.anything(),
     expect.objectContaining({ rate_minor_per_kwh: 1250 }),
   );
+  expect(result.body.property).toMatchObject({
+    rate_cents: 1250,
+    tariff_id: 7,
+  });
 });
