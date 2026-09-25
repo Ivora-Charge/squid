@@ -42,7 +42,10 @@ vi.mock("@/lib/server/db", () => ({
 vi.mock("@/lib/server/sessions", () => ({ reconcile: mocks.reconcile }));
 import { POST } from "@/app/api/ivora/webhook/route";
 const secret = "whsec_fixture";
-function deliver(event: unknown, options: { signature?: string } = {}) {
+function deliver(
+  event: unknown,
+  options: { signature?: string; eventId?: string } = {},
+) {
   const body = JSON.stringify(event);
   const t = Math.floor(Date.now() / 1000);
   const signature =
@@ -54,6 +57,7 @@ function deliver(event: unknown, options: { signature?: string } = {}) {
       headers: {
         "Content-Type": "application/json",
         "Ivora-Signature": signature,
+        ...(options.eventId ? { "Ivora-Event-Id": options.eventId } : {}),
       },
       body,
     }),
@@ -144,5 +148,17 @@ describe("Ivora webhook", () => {
   it("refuses to run without a configured secret", async () => {
     vi.stubEnv("IVORA_WEBHOOK_SECRET", "");
     expect((await deliver(statusChanged)).status).toBe(503);
+  });
+  it("deduplicates by the Ivora-Event-Id header, not the delivery id in the body", async () => {
+    await deliver(
+      { ...statusChanged, id: "whd_first" },
+      { eventId: "evt_shared" },
+    );
+    const again = await deliver(
+      { ...statusChanged, id: "whd_second" },
+      { eventId: "evt_shared" },
+    );
+    expect(await again.json()).toEqual({ received: true, duplicate: true });
+    expect(mocks.reconcile).toHaveBeenCalledTimes(1);
   });
 });

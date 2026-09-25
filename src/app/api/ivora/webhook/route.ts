@@ -46,7 +46,8 @@ export async function POST(request: NextRequest) {
   const insertion = await db()
     .from("squid_ivora_events")
     .insert({
-      id: event.id,
+      // Ivora-Event-Id names the event; the body id is the delivery record.
+      id: request.headers.get("ivora-event-id") ?? event.id,
       type: event.type,
       resource_id: event.resource_id ?? null,
     });
