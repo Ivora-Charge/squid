@@ -794,9 +794,14 @@ export function Dashboard({
                   API. Next.js on Vercel, Supabase for your data, and Stripe
                   Connect for your money.
                 </p>
-                <Link href="/developers" className="text-link">
-                  Explore the developer guide <ArrowUpRight size={16} />
-                </Link>
+                <a
+                  href="https://github.com/Ivora-Charge/squid"
+                  className="text-link"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Explore the code on GitHub <ArrowUpRight size={16} />
+                </a>
               </section>
             </div>
           )}
@@ -804,9 +809,13 @@ export function Dashboard({
             <span>
               <SquidMark /> A little charge. A better stay.
             </span>
-            <Link href="/developers">
+            <a
+              href="https://github.com/Ivora-Charge/squid"
+              target="_blank"
+              rel="noreferrer"
+            >
               Squid by Ivora · Open source <ArrowUpRight size={12} />
-            </Link>
+            </a>
           </footer>
         </main>
       </div>
@@ -889,7 +898,7 @@ export function Dashboard({
             <p>
               {demo
                 ? "This is a local demo. Stripe onboarding and charger commands are simulated here. Sign in to create your real workspace."
-                : "Need setup details or API documentation? The developer guide covers the full flow."}
+                : "Need help connecting your charger? The setup guide walks through every step."}
             </p>
             <Link
               className="button primary"
