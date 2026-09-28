@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { ArrowUpRight, ArrowLeft } from "lucide-react";
 import { Brand, Footer } from "@/components/ui";
-export const metadata = { title: "Built in the open" };
+import { ChargerTable } from "./charger-table";
+export const metadata = { title: "Connect your charger" };
 export default function Developers() {
   return (
     <div className="docs-layout">
@@ -12,133 +13,72 @@ export default function Developers() {
         </Link>
       </header>
       <main id="main" className="docs-content">
-        <p className="eyebrow">SMALL SQUID. OPEN OCEAN.</p>
+        <p className="eyebrow">PLUG IN. WELCOME IN.</p>
         <h1>
-          A charging experience
+          Connect your charger
           <br />
-          you can call your own.
+          in three simple steps.
         </h1>
         <p>
-          Squid is an open-source example of building a vacation-rental charging
-          business on the Ivora API. It keeps the guest experience, host
-          relationships, and payments in your application.
+          Squid works with smart chargers — the kind that connect to the
+          internet over Wi-Fi or a network cable. If yours is on the list below,
+          you can have it welcoming guests in about fifteen minutes. No
+          technical background needed.
         </p>
-        <h2>One small app. Connected.</h2>
-        <ul>
+        <h2>Will my charger work?</h2>
+        <p>
+          These brands and models work with Squid. Search for yours — each one
+          links to a short guide showing where its connection settings live.
+        </p>
+        <ChargerTable />
+        <p>
+          Not on the list? If your charger’s app or settings page has a section
+          called <strong>OCPP</strong> (the standard language smart chargers use
+          to talk to platforms like Squid), it will very likely work too. When
+          in doubt, ask your installer or the charger’s manufacturer.
+        </p>
+        <h2>Three steps to good energy.</h2>
+        <ol>
           <li>
-            <strong>Vercel + Next.js:</strong> the interface, server routes,
-            payment webhook, and reconciliation job.
+            <strong>Add your property in Squid.</strong> Sign in, add your
+            property, and Squid shows you three values made for your charger: a
+            station ID, a connection address, and a password.
           </li>
           <li>
-            <strong>Supabase:</strong> passwordless host sign-in, private
-            property ownership, session records, and durable request identities.
+            <strong>Paste them into your charger’s settings.</strong> Open your
+            charger’s app or settings page — the guide linked in the table shows
+            exactly where. Find the section called OCPP (sometimes “server” or
+            “backend”), paste the three values, choose <strong>OCPP 1.6</strong>{" "}
+            if it asks, and restart the charger.
           </li>
           <li>
-            <strong>Resend:</strong> optional Squid-branded sign-in emails from
-            your verified domain, with Supabase validating each one-use link.
+            <strong>Come back to Squid and refresh.</strong> When your charger
+            shows <strong>online</strong>, connect your payout account, print
+            your QR sticker, and you’re ready for guests.
           </li>
-          <li>
-            <strong>Stripe Connect:</strong> Squid’s own checkout, card
-            authorizations, refunds, and host transfers. Squid receives a 6%
-            application fee on the final charging amount.
-          </li>
-          <li>
-            <strong>Ivora:</strong> OCPP charger registration, connection state,
-            external-funded charging sessions, metered usage, and immutable
-            energy bills. Squid never uses Ivora’s payment adapters.
-          </li>
-        </ul>
-        <h2>Run it on your machine.</h2>
-        <pre>
-          <code>{`npm install\ncp .env.example .env\n# Add your own credentials to .env\nnpm run db:migrate\nnpm run dev`}</code>
-        </pre>
+        </ol>
         <p>
-          No credentials yet? The landing page,{" "}
-          <Link href="/demo">host demo</Link>, and{" "}
-          <Link href="/c/demo">guest demo</Link> run independently. The demo
-          doesn’t call Stripe or control a charger.
-        </p>
-        <h2>Give the database a home.</h2>
-        <p>
-          Create a Supabase project, enable email authentication, and run the
-          files in <code>supabase/migrations</code> in filename order in its SQL
-          editor. Alternatively, set <code>SUPABASE_DB_URL</code> and run the
-          migration command above. Add your app’s <code>/auth/callback</code>{" "}
-          and <code>/login/confirm</code> URLs to Supabase’s allowed redirect
-          URLs.
-        </p>
-        <p>
-          Host data has row-level security. The fleet key and service-role key
-          stay on the server. Guest sessions use private, HTTP-only browser
-          cookies.
-        </p>
-        <h2>A warm welcome, in their inbox.</h2>
-        <p>
-          Set <code>RESEND_API_KEY</code> and <code>RESEND_FROM_EMAIL</code> to
-          send sign-in links from your verified domain. Squid generates the
-          token with Supabase, sends its own branded email, and asks the
-          recipient to confirm before signing in. Keep email link tracking
-          disabled. The included database migration provides rate limits shared
-          across Vercel instances.
-        </p>
-        <p>
-          Without Resend, sign-in uses the email provider configured in
-          Supabase. For either path, set your canonical app URL before inviting
-          hosts.
-        </p>
-        <h2>Connect your own Stripe platform.</h2>
-        <p>
-          Enable Stripe Connect and use a test secret key while developing.
-          Hosts complete Express onboarding. Checkout authorizes a $25 hold,
-          then Squid captures the final metered amount with a 6% application
-          fee. The unused hold is released. Stripe processing fees come from the
-          platform’s share.
-        </p>
-        <pre>
-          <code>{`stripe listen --forward-to localhost:3000/api/stripe/webhook\n# Save the printed whsec_ value as STRIPE_WEBHOOK_SECRET`}</code>
-        </pre>
-        <p>
-          Listen for <code>checkout.session.completed</code> and{" "}
-          <code>checkout.session.expired</code>. Webhook signatures are verified
-          against the raw request body. Browser redirects are never treated as
-          payment confirmation.
-        </p>
-        <h2>Make yourself at home on Vercel.</h2>
-        <p>
-          Import the repository as a Next.js project, add the environment
-          variables listed in <code>.env.example</code>, and set{" "}
-          <code>NEXT_PUBLIC_APP_URL</code> to your canonical HTTPS domain.
-          Configure the Stripe webhook and Supabase redirects for that domain
-          before printing QR stickers.
-        </p>
-        <p>
-          The included job reconciles charging every minute, including when a
-          guest closes their browser. A one-minute Vercel Cron schedule requires
-          an eligible plan. You can also invoke the protected endpoint from your
-          own scheduler:
-        </p>
-        <pre>
-          <code>{`GET /api/cron/reconcile\nAuthorization: Bearer <CRON_SECRET>`}</code>
-        </pre>
-        <h2>A reference implementation, with clear boundaries.</h2>
-        <p>
-          The current Ivora endpoint is preproduction. Validate the complete
-          flow with an explicitly designated test charger and Stripe test
-          accounts before accepting real guest payments. Unknown charger or
-          payment outcomes are held for review instead of creating a second
-          transaction. Automatic cutoff requests use a margin below the
-          authorization amount; delayed meter reports or an offline charger can
-          still cause overages that need reconciliation.
-        </p>
-        <p>
-          The repository includes setup, architecture, deployment, and
-          contribution notes. Code is Apache-2.0 licensed. The included demo
-          photograph retains its separate image license.
+          Your charger only needs a working internet connection — there’s
+          nothing to configure on your router. If it doesn’t come online after a
+          restart, double-check the three values for typos; that’s the cause
+          nine times out of ten.
         </p>
         <div className="notice">
           Squid is designed for Airbnb and other vacation-rental hosts. It is
           not affiliated with or endorsed by Airbnb.
         </div>
+        <p>
+          Curious how Squid works under the hood? It’s open source — the code
+          and technical documentation live{" "}
+          <a
+            href="https://github.com/Ivora-Charge/squid"
+            target="_blank"
+            rel="noreferrer"
+          >
+            on GitHub
+          </a>
+          .
+        </p>
         <Link href="/" className="text-link">
           <ArrowLeft size={15} /> Back to the good energy
         </Link>
