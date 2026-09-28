@@ -2689,6 +2689,36 @@ input[type="range"] {
 .docs-content .button {
   margin-top: 20px;
 }
+.docs-content .table-tools {
+  margin-top: 18px;
+  justify-content: space-between;
+}
+.docs-content .table-tools small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.docs-content .search-field input {
+  width: 210px;
+}
+.docs-content .table-scroll {
+  margin: 12px 0 18px;
+}
+.docs-content table {
+  font-size: 13px;
+  white-space: normal;
+}
+.docs-content th {
+  font-size: 9px;
+}
+.docs-content td {
+  vertical-align: top;
+  font-size: 13px;
+}
+.docs-content td a {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
 @media (min-width: 1600px) {
   .dashboard-content {
     padding-top: 35px;

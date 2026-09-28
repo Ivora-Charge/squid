@@ -38,9 +38,14 @@ export default async function DashboardPage() {
           migration in your Supabase project, then refresh this page.
         </p>
         <code>npm run db:migrate</code>
-        <Link className="button primary" href="/developers">
-          Open the setup guide
-        </Link>
+        <a
+          className="button primary"
+          href="https://github.com/Ivora-Charge/squid#readme"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Open the deployment guide
+        </a>
         <Link href="/demo" className="text-link">
           Explore the demo in the meantime →
         </Link>

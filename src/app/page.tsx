@@ -18,9 +18,6 @@ export default function Home() {
         <Brand />
         <div className="nav-links">
           <a href="#how-it-works">How it works</a>
-          <Link href="/developers">
-            Built in the open <ArrowUpRight size={14} />
-          </Link>
         </div>
         <Link className="button subtle" href="/login">
           Host sign in <ArrowRight size={16} />
@@ -172,9 +169,14 @@ export default function Home() {
               Open source and ready to make your own on Vercel.
             </p>
           </div>
-          <Link href="/developers" className="button secondary">
+          <a
+            href="https://github.com/Ivora-Charge/squid"
+            className="button secondary"
+            target="_blank"
+            rel="noreferrer"
+          >
             Explore the project <ArrowUpRight size={17} />
-          </Link>
+          </a>
         </section>
       </main>
       <Footer />

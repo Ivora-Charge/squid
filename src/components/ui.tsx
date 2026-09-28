@@ -106,9 +106,13 @@ export function Footer() {
     <footer className="site-footer">
       <Brand small />
       <span>A better stay starts with a little charge.</span>
-      <Link href="/developers">
+      <a
+        href="https://github.com/Ivora-Charge/squid"
+        target="_blank"
+        rel="noreferrer"
+      >
         Open source, by nature <ArrowUpRight size={14} />
-      </Link>
+      </a>
     </footer>
   );
 }
