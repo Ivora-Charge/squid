@@ -59,6 +59,8 @@ export function demoDashboard(): DashboardData {
     email: "alex@example.com",
     payoutsReady: true,
     stripeConnected: true,
+    // One of each, so the demo shows how an offline charger looks.
+    status: { "demo-cabin": "online", "demo-cottage": "offline" },
     sessions: Array.from({ length: 28 }, (_, i) => {
       const property = demoProperties[i % 2];
       const total = 560 + ((i * 137) % 1200);
@@ -73,6 +75,7 @@ export function demoDashboard(): DashboardData {
         energy_kwh: Number((total / property.rate_cents).toFixed(2)),
         total_cents: total,
         fee_cents: Math.round(total * 0.06),
+        stripe_fee_cents: Math.round(total * 0.029) + 30,
         created_at: created,
         started_at: created,
         ended_at: new Date(Date.parse(created) + 2 * 3600000).toISOString(),

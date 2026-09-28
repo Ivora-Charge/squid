@@ -1,3 +1,4 @@
+import type { ChargerStatus, GuestAvailability } from "./status";
 export type Property = {
   id: string;
   host_id: string;
@@ -50,6 +51,7 @@ export type ChargeSession = {
   energy_kwh: number;
   total_cents: number | null;
   fee_cents: number | null;
+  stripe_fee_cents: number | null;
   stop_requested: boolean;
   refund_requested: boolean;
   last_error: string | null;
@@ -71,6 +73,7 @@ export type PublicSession = Pick<
   | "created_at"
   | "started_at"
   | "ended_at"
+  | "stop_requested"
 >;
 export type HostSession = Pick<
   ChargeSession,
@@ -81,6 +84,7 @@ export type HostSession = Pick<
   | "energy_kwh"
   | "total_cents"
   | "fee_cents"
+  | "stripe_fee_cents"
   | "created_at"
   | "started_at"
   | "ended_at"
@@ -91,6 +95,7 @@ export type DashboardData = {
   email: string;
   payoutsReady: boolean;
   stripeConnected: boolean;
+  status: Record<string, ChargerStatus>;
 };
 export type PublicProperty = Pick<
   Property,
@@ -104,4 +109,4 @@ export type PublicProperty = Pick<
   | "max_kw"
   | "rate_cents"
   | "hold_cents"
-> & { available: boolean; testMode: boolean };
+> & { availability: GuestAvailability; testMode: boolean };

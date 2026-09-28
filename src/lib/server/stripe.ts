@@ -25,7 +25,11 @@ export async function payoutStatus(hostId: string) {
   const account = await stripe().accounts.retrieve(id);
   return { id, ready: account.charges_enabled && account.payouts_enabled };
 }
-export async function onboarding(hostId: string, email: string) {
+export async function onboarding(
+  hostId: string,
+  email: string,
+  propertyId?: string,
+) {
   return withLock(`host:${hostId}`, async () => {
     let id = await hostAccount(hostId);
     if (!id) {
@@ -62,11 +66,12 @@ export async function onboarding(hostId: string, email: string) {
           .upsert({ id: hostId, stripe_account_id: id }),
       );
     }
+    const returnUrl = `${appUrl()}/dashboard?${propertyId ? `setup=${encodeURIComponent(propertyId)}` : "tab=settings"}`;
     const link = await stripe().accountLinks.create({
       account: id,
       type: "account_onboarding",
-      refresh_url: `${appUrl()}/dashboard?tab=settings`,
-      return_url: `${appUrl()}/dashboard?tab=settings`,
+      refresh_url: returnUrl,
+      return_url: returnUrl,
     });
     return link.url;
   });

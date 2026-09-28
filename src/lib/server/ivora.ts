@@ -1,6 +1,6 @@
 import "server-only";
 import { z } from "zod";
-import { createHash } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { db, checked } from "./db";
 import { required } from "./config";
 
@@ -9,6 +9,10 @@ export const stationSchema = z.object({
   name: z.string(),
   online: z.boolean(),
   protocol: z.string().nullable(),
+  location_id: z.number().nullable().optional(),
+  // Default OCPP WebSocket URL for this station; custom domains publish their own.
+  connection_url: z.string().optional(),
+  external_reference: z.string().nullable().optional(),
   connectors: z.array(
     z.object({
       id: z.number(),
@@ -18,6 +22,18 @@ export const stationSchema = z.object({
   ),
 });
 export type Station = z.infer<typeof stationSchema>;
+export const locationRecordSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+  external_reference: z.string().nullable().optional(),
+});
+export const tariffRecordSchema = z.object({
+  id: z.number(),
+  currency: z.string(),
+  rate_minor_per_kwh: z.number(),
+  authorization_minor: z.number(),
+  external_reference: z.string().nullable().optional(),
+});
 const operationSchema = z.object({
   id: z.string(),
   status: z.enum(["dispatching", "succeeded", "rejected", "unknown"]),
@@ -58,6 +74,50 @@ export const externalSchema = z.object({
   stop_operation: operationSchema.nullable(),
 });
 export type ExternalSession = z.infer<typeof externalSchema>;
+const errorSchema = z.object({
+  error: z.object({
+    code: z.string(),
+    message: z.string(),
+    details: z.record(z.string(), z.unknown()).nullable().optional(),
+  }),
+  request_id: z.string().optional(),
+});
+// Every Ivora failure carries a stable code; callers branch on it and the
+// generic failure() maps it to a message. The message itself is never shown.
+export class IvoraError extends Error {
+  readonly name = "IvoraError";
+  constructor(
+    public status: number,
+    public code: string,
+    message: string,
+    public requestId: string | null = null,
+    public details: Record<string, unknown> | null = null,
+  ) {
+    super(message);
+  }
+}
+async function ivoraError(response: Response) {
+  const parsed = errorSchema.safeParse(await response.json().catch(() => null));
+  return parsed.success
+    ? new IvoraError(
+        response.status,
+        parsed.data.error.code,
+        parsed.data.error.message,
+        parsed.data.request_id ?? null,
+        parsed.data.error.details ?? null,
+      )
+    : new IvoraError(
+        response.status,
+        response.status === 429 ? "rate_limited" : "http_error",
+        `Ivora request failed (${response.status}).`,
+      );
+}
+// A rejected operation repeats the error shape in result.error.
+export function rejectionCode(op: Operation) {
+  if (op.status !== "rejected") return null;
+  const error = op.result?.error as { code?: unknown } | undefined;
+  return typeof error?.code === "string" ? error.code : "rejected";
+}
 export function tenantPath(resource: string) {
   const id = required("IVORA_TENANT_ID");
   if (!/^\d+$/.test(id) || Number(id) < 1)
@@ -87,8 +147,7 @@ export async function ivora<T>(
     redirect: "error",
     signal: AbortSignal.timeout(15000),
   });
-  if (!response.ok)
-    throw new Error(`Ivora request failed (${response.status}).`);
+  if (!response.ok) throw await ivoraError(response);
   return schema.parse(await response.json());
 }
 function canonical(value: unknown): string {
@@ -132,6 +191,12 @@ export async function durable<T>(
   );
   return result;
 }
+// Drop a saved request whose operation Ivora rejected outright, so a later
+// attempt can dispatch again with the same key. Never used after a dispatch
+// that may have reached hardware.
+export async function forget(key: string) {
+  checked(await db().from("squid_operations").delete().eq("key", key));
+}
 export async function writeIvora<T>(
   key: string,
   resource: string,
@@ -144,27 +209,63 @@ export async function writeIvora<T>(
     ivora(path, schema, method, body, key),
   );
 }
+type Inventory = "locations" | "stations" | "tariffs";
+const RECOVERABLE = new Set([
+  "external_reference_taken",
+  "station_name_taken",
+  "outcome_unknown",
+  "request_in_progress",
+]);
+// Inventory creates are synchronous and return the record. When Ivora already
+// holds a resource for our reference (a retry after a lost response, or an
+// unanswered create) adopt it through external_reference instead of guessing.
+export async function createResource<T extends { id: number }>(
+  key: string,
+  resource: Inventory,
+  schema: z.ZodType<T>,
+  body: Record<string, unknown> & { external_reference: string },
+): Promise<T> {
+  try {
+    return await writeIvora(key, resource, schema, body);
+  } catch (error) {
+    if (!(error instanceof IvoraError) || !RECOVERABLE.has(error.code))
+      throw error;
+    const existing = await findResource(
+      resource,
+      schema,
+      body.external_reference,
+      typeof body.name === "string" ? body.name : undefined,
+    );
+    if (existing) return existing;
+    throw error;
+  }
+}
+async function findResource<T>(
+  resource: Inventory,
+  schema: z.ZodType<T>,
+  reference: string,
+  name?: string,
+): Promise<T | null> {
+  const page = z.object({ data: z.array(schema) });
+  const byReference = await ivora(
+    tenantPath(
+      `${resource}?external_reference=${encodeURIComponent(reference)}&limit=1`,
+    ),
+    page,
+  );
+  if (byReference.data[0]) return byReference.data[0];
+  // Stations registered before references existed are only findable by name.
+  if (!name) return null;
+  const byName = await ivora(
+    tenantPath(`${resource}?name=${encodeURIComponent(name)}&limit=1`),
+    page,
+  );
+  return (
+    byName.data.find((r) => (r as { name?: unknown }).name === name) ?? null
+  );
+}
 export const getStation = (id: number) =>
   ivora(tenantPath(`stations/${id}`), stationSchema);
-export async function getOcppUrl(stationName: string) {
-  const domains = await ivora(
-    tenantPath("ocpp-domains"),
-    z.object({
-      data: z.array(
-        z.object({ ready: z.boolean(), connection_url_template: z.string() }),
-      ),
-    }),
-  );
-  const ready = domains.data.find(
-    (d) =>
-      d.ready &&
-      d.connection_url_template.startsWith("wss://") &&
-      d.connection_url_template.includes("{station_id}"),
-  );
-  return ready
-    ? ready.connection_url_template.replace("{station_id}", stationName)
-    : null;
-}
 export const getExternal = (id: string) =>
   ivora(tenantPath(`charging-sessions/${id}`), externalSchema);
 export async function operation(
@@ -184,23 +285,27 @@ export async function operation(
     ? initial
     : ivora(tenantPath(`operations/${initial.id}`), operationSchema);
 }
-export async function listAll(
-  resource: string,
-): Promise<Record<string, unknown>[]> {
-  const rows: Record<string, unknown>[] = [];
-  let after = 0;
-  for (let page = 0; page < 30; page++) {
-    const result = await ivora(
-      tenantPath(`${resource}?limit=100&after=${after}`),
-      z.object({
-        data: z.array(z.record(z.string(), z.unknown())),
-        next_cursor: z.number(),
-      }),
-    );
-    rows.push(...result.data);
-    if (!result.data.length || result.next_cursor <= after) return rows;
-    after = result.next_cursor;
-  }
-  throw new Error("Inventory pagination needs review.");
+// Ivora signs deliveries as `t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<body>">`.
+export function verifyWebhookSignature(
+  secret: string,
+  header: string | null,
+  body: string,
+  now = Date.now(),
+): "ok" | "invalid" | "stale" {
+  const parts = Object.fromEntries(
+    (header ?? "")
+      .split(",")
+      .map((part) => part.trim().split("=", 2) as [string, string]),
+  );
+  const { t, v1 } = parts;
+  if (!t || !v1 || !/^\d+$/.test(t) || !/^[a-f0-9]{64}$/i.test(v1))
+    return "invalid";
+  const expected = createHmac("sha256", secret)
+    .update(`${t}.${body}`)
+    .digest("hex");
+  if (!timingSafeEqual(Buffer.from(expected), Buffer.from(v1.toLowerCase())))
+    return "invalid";
+  if (Math.abs(now / 1000 - Number(t)) > 5 * 60) return "stale";
+  return "ok";
 }
 export { billSchema };

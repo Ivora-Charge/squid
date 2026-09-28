@@ -3,18 +3,24 @@ import { GuestCharge } from "@/components/guest-charge";
 import { demoProperties } from "@/lib/demo";
 import { db } from "@/lib/server/db";
 import { getStation } from "@/lib/server/ivora";
+import { guestAvailability } from "@/lib/status";
 import type { PublicProperty } from "@/lib/types";
 export const dynamic = "force-dynamic";
 export default async function ChargerPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<{ offline?: string }>;
 }) {
   const { slug } = await params;
   if (slug === "demo") {
     const p = demoProperties[0];
+    // ?offline=1 previews what guests see while a charger is disconnected.
+    const availability =
+      (await searchParams).offline === "1" ? "offline" : "ready";
     return (
-      <GuestCharge demo property={{ ...p, available: true, testMode: true }} />
+      <GuestCharge demo property={{ ...p, availability, testMode: true }} />
     );
   }
   if (!/^[a-zA-Z0-9-]{1,60}$/.test(slug)) notFound();
@@ -30,21 +36,13 @@ export default async function ChargerPage({
   const station = p.station_id
     ? await getStation(p.station_id).catch(() => null)
     : null;
-  const available = Boolean(
-    station?.online &&
-    station.connectors.some(
-      (c) =>
-        c.id === p.connector_id &&
-        ["Available", "Preparing"].includes(c.status ?? ""),
-    ),
-  );
   const { station_id: _, connector_id: __, ...safe } = p;
   return (
     <GuestCharge
       property={
         {
           ...safe,
-          available,
+          availability: guestAvailability(station, p.connector_id),
           testMode: !process.env.STRIPE_SECRET_KEY?.startsWith("sk_live_"),
         } as PublicProperty
       }

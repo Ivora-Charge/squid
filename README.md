@@ -4,13 +4,13 @@
 
 Squid turns an OCPP charger at a vacation rental into a paid guest amenity. Hosts connect their charger, set a price, connect payouts, and print a QR sticker. Guests scan, authorize a card hold, charge, and pay for the energy delivered. The interface is dark, responsive, and designed for phones.
 
-This is an Apache-2.0 reference application for the Ivora API. One Squid operator manages all hosts through one Ivora tenant. Squid owns guest access and payments: Stripe Connect routes 94% of the final charging amount to the host, with a 6% application fee for Squid. Ivora handles OCPP and metered billing through **external-funded charging sessions**, without using Ivora payment adapters.
+This is an Apache-2.0 reference application for the Ivora API. One Squid operator manages all hosts through one Ivora tenant. Squid owns guest access and payments: Stripe Connect routes the final charging amount to the host minus a 6% Squid fee and Stripe’s processing fee (2.9% + 30¢), both collected as the Connect application fee. Ivora handles OCPP and metered billing through **external-funded charging sessions**, without using Ivora payment adapters.
 
 ![The dark Squid host dashboard, showing charging earnings, usage, and property chargers](docs/squid-preview.png)
 
 ## Try it locally
 
-Requires Node.js 22+ and npm. No credentials are needed for the interactive demo.
+Requires Node.js 22 and npm. No credentials are needed for the interactive demo.
 
 ```sh
 npm ci
@@ -31,19 +31,24 @@ npm run check:setup
 npm run dev
 ```
 
-| Variable                            | Purpose                                                                                       |
-| ----------------------------------- | --------------------------------------------------------------------------------------------- |
-| `NEXT_PUBLIC_APP_URL`               | Canonical application origin, including your local port. Use HTTPS in production.             |
-| `SUPABASE_URL`, `SUPABASE_ANON_KEY` | Supabase project and public auth key.                                                         |
-| `SUPABASE_SERVICE_ROLE_KEY`         | Server-only administrative key. An anon key cannot replace it.                                |
-| `SUPABASE_DB_URL`                   | Only needed to run the migration command. Use the direct or session pooler connection string. |
-| `RESEND_API_KEY`                    | Optional server-only key for Squid-branded sign-in emails.                                    |
-| `RESEND_FROM_EMAIL`                 | Sender on your verified domain, such as `Squid by Ivora <hello@squidcharge.io>`.              |
-| `IVORA_API_URL`                     | Ivora API origin. The supplied `.co` endpoint is preproduction.                               |
-| `IVORA_API_KEY`, `IVORA_TENANT_ID`  | Server-only credentials for Squid's shared fleet account.                                     |
-| `STRIPE_SECRET_KEY`                 | Squid's Stripe platform secret key. Start with test mode.                                     |
-| `STRIPE_WEBHOOK_SECRET`             | Signing secret for Squid's Stripe webhook endpoint.                                           |
-| `CRON_SECRET`                       | A random secret protecting scheduled reconciliation.                                          |
+| Variable                                                        | Purpose                                                                                           |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `NEXT_PUBLIC_APP_URL`                                           | Canonical application origin, including your local port. Use HTTPS in production.                 |
+| `SUPABASE_URL`, `SUPABASE_ANON_KEY`                             | Supabase project and public auth key.                                                             |
+| `SUPABASE_SERVICE_ROLE_KEY`                                     | Server-only administrative key. An anon key cannot replace it.                                    |
+| `SUPABASE_DB_URL`                                               | Only needed to run the migration command. Use the direct or session pooler connection string.     |
+| `RESEND_API_KEY`                                                | Optional server-only key for Squid-branded sign-in emails.                                        |
+| `RESEND_FROM_EMAIL`                                             | Sender on your verified domain, such as `Squid by Ivora <hello@squidcharge.io>`.                  |
+| `IVORA_API_URL`                                                 | Ivora API origin. The supplied `.co` endpoint is preproduction.                                   |
+| `IVORA_API_KEY`, `IVORA_TENANT_ID`                              | Server-only credentials for Squid's shared fleet account.                                         |
+| `IVORA_WEBHOOK_SECRET`                                          | Signing secret printed once by `npm run ivora:webhook -- register <url>`. Enables Ivora webhooks. |
+| `GOOGLE_MAPS_ADDRESS_API_KEY`                                   | Server-only Google key with Places API (New) and Time Zone API enabled.                           |
+| `OCPP_CREDENTIAL_KEY`                                           | Stable 32-byte encryption key as 64 hex characters; generate with `openssl rand -hex 32`.         |
+| `STRIPE_SECRET_KEY`                                             | Squid's Stripe platform secret key. Start with test mode.                                         |
+| `STRIPE_WEBHOOK_SECRET`                                         | Signing secret for Squid's Stripe webhook endpoint.                                               |
+| `CRON_SECRET`                                                   | A random secret protecting scheduled reconciliation.                                              |
+| `NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN`, `NEXT_PUBLIC_POSTHOG_HOST` | Optional PostHog project key and ingest host. Provisioned by the Vercel PostHog integration.      |
+| `NEXT_PUBLIC_GA_MEASUREMENT_ID`                                 | Optional Google Analytics 4 measurement ID.                                                       |
 
 ### Supabase
 
@@ -84,19 +89,35 @@ stripe listen --forward-to localhost:3000/api/stripe/webhook
 # Put the emitted whsec_ value in STRIPE_WEBHOOK_SECRET.
 ```
 
-Squid verifies Stripe state on the server before starting a charger. After confirmed charging completion, it captures the immutable final Ivora bill and sets `application_fee_amount` to 6%, rounded to the nearest cent. For a $10.00 charge, the host receives $9.40 and Squid receives $0.60 before Stripe processing fees. Processing fees are paid by the platform. Full refunds reverse both the host transfer and application fee. See [Stripe destination charges](https://docs.stripe.com/connect/destination-charges) and [manual capture](https://docs.stripe.com/api/payment_intents/capture).
+Squid verifies Stripe state on the server before starting a charger. After confirmed charging completion, it captures the immutable final Ivora bill and sets `application_fee_amount` to Squid's 6% plus Stripe's processing fee (2.9% + 30¢), each rounded to the nearest cent. Bills below Stripe's $0.50 USD minimum are waived: Squid releases the entire hold and records $0 collected, while preserving Ivora's metered bill. For a $10.00 charge, the application fee is $1.19: $0.60 for Squid and $0.59 covering Stripe's processing fee, so the host receives $8.81. Processing fees are passed through to hosts at Stripe's standard rate; Squid adds nothing on top. Full refunds reverse both the host transfer and application fee. See [Stripe destination charges](https://docs.stripe.com/connect/destination-charges) and [manual capture](https://docs.stripe.com/api/payment_intents/capture).
+
+Unplugging ends the physical transaction; reconciliation finalizes its bill and completes payment automatically. Ivora's completed session response may omit live usage, so retries settle from its immutable final bill without regressing to a starting state. A concurrent reconciliation returns the latest saved session, including any queued stop request. Guest polling keeps confirmed readings during transient failures and displays a retry notice only after repeated failures.
 
 ### Ivora and OCPP
 
-The API key needs the tenant inventory, station provisioning, tariff, operation, and external-funded charging-session permissions. Configure an active OCPP domain for the tenant in Ivora. Squid uses the API's connection URL or a **ready** domain's connection URL template; DNS verification alone is not sufficient.
+The API key needs the tenant inventory, station provisioning, tariff, operation, and external-funded charging-session permissions. Squid registers each location, station, and tariff with an `external_reference` derived from the property, so a retry after a lost response adopts the existing record instead of matching names. Each registered station returns its OCPP connection URL; a custom OCPP domain, if configured in Ivora, publishes its own. Registering the webhook additionally needs `webhooks:write`.
 
 Hosts add a property, enter the station identity, OCPP URL, and password in their charger's configuration, then refresh setup. The station must be online and Stripe onboarding complete before its guest page can be published. One property currently represents one AC connector, up to 22 kW. Rate and authorization amounts are snapshotted for each session.
 
+Address suggestions fill the property's location and time zone automatically. The server confirms the selected US street address, signs the selection for that host, and validates it when saving. Hosts never enter coordinates or time zones. Search is authenticated, throttled, and uses Google autocomplete session tokens. Enable Places API (New) and Time Zone API on the Google key's project. Demo onboarding uses clearly labeled sample addresses and needs no Google key.
+
+New station identities use a shortened property name and a unique suffix, such as `bluebird-cabin-a1b2c3`, with at most 23 characters. Squid presets a random 16-character OCPP password using uppercase letters and digits without `I`, `O`, `0`, or `1`. The password is installed through Ivora's credentials API before setup completes. The `202609240001_charger_credentials.sql` migration stores it encrypted with AES-256-GCM in a service-only table. Keep `OCPP_CREDENTIAL_KEY` backed up and consistent across instances sharing this database; changing it prevents old passwords from being decrypted. Owners can retrieve their password from the authenticated setup dialog. Existing station identities and connection passwords stay valid; an existing charger can receive a preset through an explicit offline setup action.
+
+Hosts without ready Stripe payouts see a fourth onboarding step. Their charger is saved before Stripe opens, retries reuse the saved charger, and both Stripe return and refresh URLs reopen that charger's setup. Squid checks the actual account status before publishing. Preview the first-host flow at `/demo?onboarding=1`.
+
 The app connects chargers to Ivora's OCPP service. Vercel runs the web application and server routes; it does not host persistent OCPP WebSockets. API schema: [Ivora OpenAPI](https://api.ivoracharge.co/openapi.json).
+
+### Analytics
+
+When their variables are set, `src/instrumentation-client.ts` starts PostHog and Google Analytics 4 in the browser. Neither loads when its variable is empty, so local development and forks send nothing by default. PostHog captures pageviews, clicks, and session replays with every form input masked; the OCPP password field is also excluded with `ph-no-capture`. PostHog traffic goes through Squid's own origin at `/ingest` (rewritten in `next.config.ts`) so ad blockers do not drop it. Sign-in and password-reset pages carry one-use tokens in the URL fragment, so neither tool starts on those pages, and fragments are stripped from every URL PostHog records. Stripe Checkout runs on Stripe's domain and is not captured.
+
+### Ivora webhooks
+
+Ivora pushes signed `charging_session.status_changed`, `bill.finalized`, and `operation.completed` events to `/api/ivora/webhook`, and while a subscription is active it observes started sessions itself about every 15 seconds. Squid verifies the `Ivora-Signature` HMAC, records each event id in `squid_ivora_events` so redeliveries are acknowledged once, and reconciles the affected session after acknowledging. Register the deployed endpoint once with `npm run ivora:webhook -- register https://<your-domain>/api/ivora/webhook`, store the printed `IVORA_WEBHOOK_SECRET` in that deployment, then confirm with `npm run ivora:webhook -- test <id>` and `deliveries <id>`. The every-minute reconciliation cron remains the safety net for missed deliveries and Stripe-side state.
 
 ## Deploy on Vercel
 
-1. Import this repository with the Next.js preset and Node.js 22+.
+1. Import this repository with the Next.js preset and Node.js 22.x, matching the pinned runtime and CI.
 2. Set the environment variables above for the intended environment. Use separate Supabase, Stripe, and Ivora test resources for previews.
 3. Apply all Supabase migrations. Set `NEXT_PUBLIC_APP_URL` to the canonical HTTPS origin and add its Supabase callback and confirmation URLs. Configure the Resend sender if using custom email delivery.
 4. Register the Stripe webhook against that origin and set its signing secret.
@@ -106,6 +127,36 @@ The app connects chargers to Ivora's OCPP service. Vercel runs the web applicati
 The every-minute job requires Vercel Pro or Enterprise under the current [Cron limits](https://vercel.com/docs/cron-jobs/usage-and-pricing). For a demo on Hobby, remove the cron entry. For real sessions, supply an external scheduler every minute with `Authorization: Bearer <CRON_SECRET>`; guest polling alone is insufficient because guests can close their browser.
 
 Reconciliation processes ten sessions per invocation, oldest first. This is a small-fleet reference implementation, not an unbounded job queue. Monitor session age and increase scheduling capacity before growing the fleet.
+
+### Squid preproduction
+
+The `preproduction` branch deploys to [www.squidcharge.dev](https://www.squidcharge.dev) through the Vercel project `squid-dev`. Make deployment changes on this branch and push to `origin/preproduction`.
+
+In this project's **Settings → Environments → Production**, Branch Tracking is set to `preproduction`. Vercel calls the domain-serving environment **Production**, even though Squid uses it for preproduction with Stripe test mode and Ivora's `.co` API. Put this site's credentials in that Vercel environment. This also enables the every-minute reconciliation cron; Vercel does not run cron jobs on Preview deployments. See [Vercel Git deployments](https://vercel.com/docs/git) and [Cron Jobs](https://vercel.com/docs/cron-jobs).
+
+Set `NEXT_PUBLIC_APP_URL=https://www.squidcharge.dev`. Register the Stripe test webhook at `https://www.squidcharge.dev/api/stripe/webhook`. In Supabase Auth URL Configuration, set the Site URL to that origin and allow:
+
+```text
+https://www.squidcharge.dev/auth/callback
+https://www.squidcharge.dev/auth/callback?next=/login/reset
+https://www.squidcharge.dev/login/confirm
+```
+
+Keep any LAN callbacks needed for local development. Store secrets in Vercel and the ignored local `.env`; `SUPABASE_DB_URL` is only needed locally for migrations. Production runs as a separate Vercel project with its own credentials; see below.
+
+### Squid production
+
+The `main` branch deploys to [www.squidcharge.io](https://www.squidcharge.io) through the Vercel project `squid`; the bare `squidcharge.io` redirects to `www.`. Release by merging `preproduction` into `main`. Pushes to other branches build Preview deployments of this project, so production secrets are set for the **Production** environment only.
+
+Production uses its own Supabase project, Stripe live mode, and Ivora's production API. Set `NEXT_PUBLIC_APP_URL=https://www.squidcharge.io`, register the live Stripe webhook at `https://www.squidcharge.io/api/stripe/webhook`, register the Ivora webhook at `https://www.squidcharge.io/api/ivora/webhook`, and allow these Supabase Auth redirect URLs:
+
+```text
+https://www.squidcharge.io/auth/callback
+https://www.squidcharge.io/auth/callback?next=/login/reset
+https://www.squidcharge.io/login/confirm
+```
+
+Production's `OCPP_CREDENTIAL_KEY` differs from preproduction's. Keep a copy outside Vercel, which stores it write-only; losing it makes saved charger passwords unrecoverable.
 
 ## Verification
 
@@ -122,7 +173,7 @@ Tests cover payment and fee invariants, settlement retries, ownership and guest 
 
 ## Boundaries
 
-This implementation has a USD/US model, one connector per property, a $25 hold, whole-session refunds, and a fixed 6% fee. Charging requests a stop at 85% of the hold or after 24 hours. Delayed meter reports or charger connectivity can still cause overages. Squid never silently caps a larger final bill or assumes a dispatched stop means the charger stopped. Uncertain outcomes remain reserved for operator review; see [recovery and architecture](docs/architecture.md).
+This implementation has a USD/US model, one connector per property, a $25 hold, whole-session refunds, and a fixed 6% fee plus Stripe's processing fee passed through to hosts. Charging requests a stop at 85% of the hold or after 24 hours. Delayed meter reports or charger connectivity can still cause overages. Squid never silently caps a larger final bill or assumes a dispatched stop means the charger stopped. Uncertain outcomes remain reserved for operator review; see [recovery and architecture](docs/architecture.md).
 
 The included policy pages identify the project as a demonstration. A live operator must provide their contact information and applicable policies, configure any required taxes, and validate their hardware and payment flows before accepting guests. The current code does not calculate tax, handle disputes, or provide an automated operator reconciliation console.
 

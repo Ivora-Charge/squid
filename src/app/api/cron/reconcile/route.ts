@@ -27,6 +27,11 @@ export async function GET(request: NextRequest) {
     .from("squid_rate_limits")
     .delete()
     .lt("resets_at", new Date(Date.now() - 86400000).toISOString());
+  // Ivora retries deliveries for about a day; a week of ids covers late ones.
+  await db()
+    .from("squid_ivora_events")
+    .delete()
+    .lt("received_at", new Date(Date.now() - 7 * 86400000).toISOString());
   const results = await Promise.allSettled(
     (data ?? []).map(async (s) => {
       try {

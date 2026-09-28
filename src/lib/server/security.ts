@@ -55,7 +55,54 @@ export async function requireGuest(id: string) {
       "Open this session in the browser where you started charging.",
     );
 }
+// Ivora's stable error codes, mapped to what a host can act on.
+const IVORA_MESSAGES: Record<string, { status: number; message: string }> = {
+  station_offline: {
+    status: 409,
+    message: "Your charger is offline. Connect it and try again.",
+  },
+  station_online: {
+    status: 409,
+    message:
+      "Disconnect your charger before preparing its connection password.",
+  },
+  request_in_progress: {
+    status: 409,
+    message: "This action is already in progress. Please retry shortly.",
+  },
+  rate_limited: {
+    status: 429,
+    message: "Too many charger requests right now. Try again in a minute.",
+  },
+  outcome_unknown: {
+    status: 503,
+    message:
+      "Ivora didn’t confirm that request. Refresh setup in a moment; nothing was duplicated.",
+  },
+  csms_unavailable: {
+    status: 503,
+    message: "The charger network is unavailable. Please try again shortly.",
+  },
+  csms_request_failed: {
+    status: 503,
+    message: "The charger network is unavailable. Please try again shortly.",
+  },
+  temporarily_unavailable: {
+    status: 503,
+    message: "The charger network is unavailable. Please try again shortly.",
+  },
+};
 export function failure(error: unknown) {
+  if (error instanceof Error && error.name === "IvoraError") {
+    const { code, requestId } = error as { code?: string; requestId?: string };
+    console.error("[Squid] IvoraError", code, requestId ?? "");
+    const known = IVORA_MESSAGES[code ?? ""];
+    if (known)
+      return NextResponse.json(
+        { error: known.message },
+        { status: known.status },
+      );
+  }
   if (error instanceof HttpError)
     return NextResponse.json(
       { error: error.message },

@@ -3,7 +3,13 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type Stripe from "stripe";
 import type { ChargeSession, Property, PublicSession } from "../types";
-import { captureAmount, platformFee } from "../money";
+import {
+  applicationFee,
+  captureAmount,
+  platformFee,
+  processingFee,
+  MINIMUM_CHARGE_CENTS,
+} from "../money";
 import { checked, db, withLock } from "./db";
 import { appUrl } from "./config";
 import { HttpError } from "./security";
@@ -16,6 +22,7 @@ import {
   getStation,
   operation,
   writeIvora,
+  type ExternalSession,
 } from "./ivora";
 
 export const TERMINAL = ["completed", "canceled", "refunded"] as const;
@@ -41,6 +48,7 @@ export function publicSession(s: ChargeSession): PublicSession {
     created_at,
     started_at,
     ended_at,
+    stop_requested,
   } = s;
   return {
     id,
@@ -54,6 +62,7 @@ export function publicSession(s: ChargeSession): PublicSession {
     created_at,
     started_at,
     ended_at,
+    stop_requested,
   };
 }
 async function property(id: string): Promise<Property> {
@@ -140,6 +149,10 @@ export async function createCheckout(slug: string, requestId: string) {
       await ensureCheckout(prior as ChargeSession, p as Property);
       return loadSession(prior.id);
     }
+    if (!p.tariff_id)
+      throw new Error(
+        "This charger’s price is being updated. Please try again in a moment.",
+      );
     const account = await payoutStatus(p.host_id);
     if (!account.ready || !account.id)
       throw new Error(
@@ -210,6 +223,16 @@ function intentMatches(pi: Stripe.PaymentIntent, s: ChargeSession) {
     pi.amount === s.hold_cents &&
     destinationId === s.stripe_account_id &&
     pi.capture_method === "manual"
+  );
+}
+function hasCompletedBill(external: ExternalSession) {
+  return (
+    external.bill.status === "final" &&
+    external.bill.transaction_id !== null &&
+    (external.usage
+      ? !external.usage.active &&
+        external.bill.transaction_id === external.usage.transaction_id
+      : external.status === "completed")
   );
 }
 export async function reconcile(id: string): Promise<ChargeSession> {
@@ -302,21 +325,20 @@ export async function reconcile(id: string): Promise<ChargeSession> {
           last_error: null,
         });
       } else if (
-        external.usage &&
-        !external.usage.active &&
-        external.bill.status === "final" &&
-        external.bill.total_minor === 0 &&
-        external.bill.transaction_id === external.usage.transaction_id
+        hasCompletedBill(external) &&
+        external.bill.total_minor !== null &&
+        external.bill.total_minor < MINIMUM_CHARGE_CENTS
       ) {
-        // Recover if the zero-cost release succeeded but its acknowledgement was lost.
+        // Recover a released hold even when the acknowledgement was lost.
         await report(s, "release", 0, pi.id);
         await update(id, {
           status: "completed",
           total_cents: 0,
           fee_cents: 0,
+          stripe_fee_cents: 0,
           energy_kwh: Number(external.bill.energy_kwh ?? 0),
-          started_at: external.usage.started_at,
-          ended_at: external.usage.ended_at,
+          started_at: external.usage?.started_at ?? s.started_at,
+          ended_at: external.usage?.ended_at ?? s.ended_at,
           checkout_url: null,
           last_error: null,
         });
@@ -398,8 +420,10 @@ export async function reconcile(id: string): Promise<ChargeSession> {
     }
     if (
       external.status === "reconciliation_required" ||
-      external.start_operation?.status === "unknown" ||
-      external.start_operation?.status === "rejected"
+      (external.bill.status === "final" && !hasCompletedBill(external)) ||
+      (!hasCompletedBill(external) &&
+        (external.start_operation?.status === "unknown" ||
+          external.start_operation?.status === "rejected"))
     ) {
       await update(id, {
         status: "review",
@@ -442,7 +466,11 @@ export async function reconcile(id: string): Promise<ChargeSession> {
         started_at: external.usage.started_at,
         ended_at: external.usage.ended_at,
       });
-    } else if (external.start_operation) {
+    } else if (
+      external.start_operation &&
+      !hasCompletedBill(external) &&
+      !s.ended_at
+    ) {
       await update(id, { status: "starting", checkout_url: null });
     }
     if (external.usage?.active) {
@@ -475,8 +503,11 @@ export async function reconcile(id: string): Promise<ChargeSession> {
       } else await update(id, { status: "charging" });
       return loadSession(id);
     }
-    if (external.usage && !external.usage.active) {
-      await update(id, { status: "settling" });
+    if (
+      (external.usage && !external.usage.active) ||
+      hasCompletedBill(external)
+    ) {
+      await update(id, { status: "settling", checkout_url: null });
       const bill =
         external.bill.status === "final"
           ? external.bill
@@ -484,11 +515,15 @@ export async function reconcile(id: string): Promise<ChargeSession> {
               `${id}:finalize`,
               `charging-sessions/${external.id}/finalize`,
               billSchema,
-              { transaction_id: external.usage.transaction_id },
+              { transaction_id: external.usage!.transaction_id },
             );
       if (bill.status !== "final" || bill.total_minor === null)
         return loadSession(id);
-      if (bill.transaction_id !== external.usage.transaction_id) {
+      if (
+        bill.transaction_id === null ||
+        (external.usage &&
+          bill.transaction_id !== external.usage.transaction_id)
+      ) {
         await update(id, {
           status: "review",
           last_error: "The bill does not match this charging transaction.",
@@ -504,11 +539,15 @@ export async function reconcile(id: string): Promise<ChargeSession> {
         });
         return loadSession(id);
       }
-      if (total === 0) {
+      // Keep Ivora's immutable bill intact. Squid waives amounts below Stripe's
+      // USD minimum instead of charging guests more than their metered usage.
+      const charged = total < MINIMUM_CHARGE_CENTS ? 0 : total;
+      if (charged === 0) {
         if (pi.status !== "requires_capture") {
           await update(id, {
             status: "review",
-            last_error: "A captured payment cannot settle a zero-cost bill.",
+            last_error:
+              "A captured payment needs review before releasing this session.",
           });
           return loadSession(id);
         }
@@ -537,7 +576,7 @@ export async function reconcile(id: string): Promise<ChargeSession> {
         if (
           pi.status !== "succeeded" ||
           pi.amount_received !== total ||
-          pi.application_fee_amount !== platformFee(total)
+          pi.application_fee_amount !== applicationFee(total)
         ) {
           await update(id, { status: "review" });
           return loadSession(id);
@@ -546,10 +585,12 @@ export async function reconcile(id: string): Promise<ChargeSession> {
       }
       await update(id, {
         status: "completed",
-        total_cents: total,
-        fee_cents: platformFee(total),
+        total_cents: charged,
+        fee_cents: platformFee(charged),
+        stripe_fee_cents: processingFee(charged),
         energy_kwh: Number(bill.energy_kwh ?? 0),
         checkout_url: null,
+        last_error: null,
       });
     }
     return loadSession(id);

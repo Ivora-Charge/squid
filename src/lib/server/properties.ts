@@ -2,37 +2,49 @@ import "server-only";
 import { z } from "zod";
 import { checked, db, withLock } from "./db";
 import {
-  getOcppUrl,
+  createResource,
   getStation,
-  ivora,
-  listAll,
-  operation,
-  tenantPath,
+  locationRecordSchema,
+  stationSchema as stationRecordSchema,
+  tariffRecordSchema,
 } from "./ivora";
 import { payoutStatus } from "./stripe";
 import { HttpError } from "./security";
 import type { Property } from "../types";
+import { configureCredentials } from "./charger-credentials";
 export const propertyInput = z.object({
   id: z.uuid(),
   name: z.string().trim().min(2).max(80),
-  address: z.string().trim().min(3).max(120),
-  city: z.string().trim().min(2).max(120),
-  state: z.string().trim().length(2),
-  latitude: z.number().min(-90).max(90),
-  longitude: z.number().min(-180).max(180),
-  time_zone: z.string().refine((v) => {
-    try {
-      new Intl.DateTimeFormat("en-US", { timeZone: v });
-      return true;
-    } catch {
-      return false;
-    }
-  }),
-  rate_cents: z.number().int().min(1).max(500),
+  addressToken: z.string().min(1).max(4000),
+  // No price ceiling; the bound only keeps the value inside a Postgres integer.
+  rate_cents: z.number().int().min(1).max(2_147_483_647),
   max_kw: z.number().positive().max(22),
   connector_type: z.enum(["J1772", "NACS", "Type 2"]),
   instructions: z.string().trim().max(500),
 });
+export const propertyUpdate = propertyInput.omit({
+  id: true,
+  addressToken: true,
+});
+export async function updateProperty(
+  hostId: string,
+  id: string,
+  fields: z.infer<typeof propertyUpdate>,
+): Promise<Property> {
+  const current = await ownedProperty(hostId, id);
+  const repriced = fields.rate_cents !== current.rate_cents;
+  // A new price needs a new Ivora tariff. Clearing tariff_id blocks guest
+  // starts until provision() has created it, so no session bills at a stale rate.
+  checked(
+    await db()
+      .from("squid_properties")
+      .update({ ...fields, ...(repriced ? { tariff_id: null } : {}) })
+      .eq("id", id)
+      .eq("host_id", hostId),
+  );
+  if (repriced) await provision(hostId, id);
+  return ownedProperty(hostId, id);
+}
 export async function ownedProperty(
   hostId: string,
   id: string,
@@ -59,81 +71,69 @@ export async function provision(hostId: string, id: string): Promise<Property> {
       );
       p = { ...p, ...values };
     };
+    // Inventory creates return their record; the reference lets a retry adopt
+    // what an earlier attempt created. Keys carry a version so requests saved
+    // under the older operation-based flow are never replayed as records.
+    const reference = `property:${id}`;
     if (!p.location_id) {
-      const name = `Squid ${p.id}`;
-      const op = await operation(`${id}:location`, "locations", {
-        name,
-        address: p.address,
-        city: p.city,
-        state: p.state,
-        country: "USA",
-        latitude: p.latitude,
-        longitude: p.longitude,
-        time_zone: p.time_zone,
-      });
-      if (op.status !== "succeeded")
-        throw new Error(
-          "Charger setup is pending. Resume setup to check the original operation.",
-        );
-      const location = (await listAll("locations")).find(
-        (l) => l.name === name,
+      const location = await createResource(
+        `${id}:location:v2`,
+        "locations",
+        locationRecordSchema,
+        {
+          name: p.name,
+          address: p.address,
+          city: p.city,
+          state: p.state,
+          country: "USA",
+          latitude: p.latitude,
+          longitude: p.longitude,
+          time_zone: p.time_zone,
+          external_reference: reference,
+        },
       );
-      if (!location || typeof location.id !== "number")
-        throw new Error("Charger setup is pending. Resume setup in a moment.");
       await save({ location_id: location.id });
     }
     if (!p.station_id) {
-      const op = await operation(`${id}:station`, "stations", {
-        name: p.station_name,
-        location_id: p.location_id,
-        connectors: 1,
-      });
-      if (op.status !== "succeeded")
-        throw new Error(
-          "Charger setup is pending. Resume setup to check the original operation.",
-        );
-      const records = await ivora(
-        tenantPath(`stations?name=${encodeURIComponent(p.station_name)}`),
-        z.object({
-          data: z.array(z.object({ id: z.number(), name: z.string() })),
-        }),
+      const station = await createResource(
+        `${id}:station:v2`,
+        "stations",
+        stationRecordSchema,
+        {
+          name: p.station_name,
+          location_id: p.location_id,
+          connectors: 1,
+          external_reference: reference,
+        },
       );
-      const station = records.data.find((s) => s.name === p.station_name);
-      if (!station)
-        throw new Error("Charger setup is pending. Resume setup in a moment.");
-      const url = op.result?.connection_url;
       await save({
         station_id: station.id,
-        ocpp_url: typeof url === "string" ? url : null,
+        connector_id: station.connectors[0]?.id ?? null,
+        ocpp_url: station.connection_url ?? null,
       });
     }
     if (!p.tariff_id) {
-      const op = await operation(`${id}:tariff`, "tariffs", {
-        currency: "USD",
-        rate_minor_per_kwh: p.rate_cents,
-        authorization_minor: p.hold_cents,
-      });
-      if (op.status !== "succeeded")
-        throw new Error(
-          "Charger setup is pending. Resume setup to check the original operation.",
-        );
-      const tariff = (await listAll("tariffs")).find(
-        (t) =>
-          t.currency === "USD" &&
-          Number(t.rate_minor_per_kwh) === p.rate_cents &&
-          Number(t.authorization_minor) === p.hold_cents,
+      const tariff = await createResource(
+        `${id}:tariff:${p.rate_cents}:v2`,
+        "tariffs",
+        tariffRecordSchema,
+        {
+          currency: "USD",
+          rate_minor_per_kwh: p.rate_cents,
+          authorization_minor: p.hold_cents,
+          external_reference: `${reference}:rate:${p.rate_cents}`,
+        },
       );
-      if (!tariff || typeof tariff.id !== "number")
-        throw new Error("Charger setup is pending. Resume setup in a moment.");
       await save({ tariff_id: tariff.id });
     }
-    if (!p.ocpp_url) {
-      const url = await getOcppUrl(p.station_name).catch(() => null);
-      if (url) await save({ ocpp_url: url });
+    await configureCredentials(p);
+    if (!p.connector_id || !p.ocpp_url) {
+      const station = await getStation(p.station_id!);
+      await save({
+        connector_id: station.connectors[0]?.id ?? p.connector_id,
+        ocpp_url: station.connection_url ?? p.ocpp_url,
+      });
     }
-    const station = await getStation(p.station_id!);
-    if (station.connectors.length)
-      await save({ connector_id: station.connectors[0].id });
     return p;
   });
 }

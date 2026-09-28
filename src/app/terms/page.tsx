@@ -22,6 +22,7 @@ export default function Terms() {
           card authorization reserves funds; your final charge is based on
           measured energy. The unused part of the authorization is released. The
           timing of that release appearing on your account depends on your bank.
+          Charges below $0.50 are waived and the full authorization is released.
         </p>
         <h2>Ending a session</h2>
         <p>
@@ -32,11 +33,22 @@ export default function Terms() {
         </p>
         <h2>Host earnings</h2>
         <p>
-          Squid’s application fee is 6% of the final transaction amount, rounded
-          to the nearest cent. The remaining 94% is transferred to the host’s
-          connected Stripe account. Bank payouts follow Stripe’s account
-          requirements and payout schedule. A full refund reverses the host
-          transfer and the application fee.
+          Squid’s fee is 6% of the final transaction amount, rounded to the
+          nearest cent. Stripe’s card processing fee (currently 2.9% plus $0.30
+          per transaction) is also deducted from the host’s share and collected
+          together with Squid’s fee as the Connect application fee. The
+          remainder is transferred to the host’s connected Stripe account. Bank
+          payouts follow Stripe’s account requirements and payout schedule. A
+          full refund reverses the host transfer and the application fee.
+        </p>
+        <h2>Address search</h2>
+        <p>
+          Property address search uses Google Maps. Use of that feature is
+          subject to the{" "}
+          <a href="https://maps.google.com/help/terms_maps/">
+            Google Maps Terms of Service
+          </a>
+          .
         </p>
         <h2>Compatibility and support</h2>
         <p>

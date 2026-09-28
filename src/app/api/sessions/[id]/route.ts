@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { failure, requireGuest, sameOrigin } from "@/lib/server/security";
-import { checked, db } from "@/lib/server/db";
+import { checked, db, LockBusyError } from "@/lib/server/db";
 import { loadSession, publicSession, reconcile } from "@/lib/server/sessions";
 export const maxDuration = 60;
 export async function GET(
@@ -37,7 +37,20 @@ export async function POST(
           .update({ stop_requested: true })
           .eq("id", id),
       );
-    return NextResponse.json({ session: publicSession(await reconcile(id)) });
+    try {
+      return NextResponse.json(
+        { session: publicSession(await reconcile(id)) },
+        { headers: { "Cache-Control": "private, no-store" } },
+      );
+    } catch (error) {
+      if (!(error instanceof LockBusyError)) throw error;
+      // Another worker owns reconciliation. A stop request is already persisted;
+      // return the latest snapshot while that worker or the next poll finishes it.
+      return NextResponse.json(
+        { session: publicSession(await loadSession(id)) },
+        { status: 202, headers: { "Cache-Control": "private, no-store" } },
+      );
+    }
   } catch (error) {
     return failure(error);
   }

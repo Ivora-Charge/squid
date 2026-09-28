@@ -4,6 +4,12 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { authCookieOptions, required } from "./config";
 import { randomUUID } from "node:crypto";
+export class LockBusyError extends Error {
+  constructor() {
+    super("This action is already in progress. Please retry shortly.");
+    this.name = "LockBusyError";
+  }
+}
 export function db() {
   return createClient(
     required("SUPABASE_URL"),
@@ -50,10 +56,7 @@ export async function withLock<T>(
   });
   if (error)
     throw new Error("Database setup is incomplete. Apply the Squid migration.");
-  if (!data)
-    throw new Error(
-      "This action is already in progress. Please retry shortly.",
-    );
+  if (!data) throw new LockBusyError();
   try {
     return await run();
   } finally {

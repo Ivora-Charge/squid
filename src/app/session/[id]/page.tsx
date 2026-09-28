@@ -28,6 +28,7 @@ export default async function SessionPage({
           created_at: new Date().toISOString(),
           started_at: new Date().toISOString(),
           ended_at: null,
+          stop_requested: false,
         }}
       />
     );

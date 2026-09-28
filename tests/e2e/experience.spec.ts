@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { readFile } from "node:fs/promises";
 const origin = process.env.E2E_BASE_URL || "http://localhost:3100";
 test("host sign-in explains email delivery without sending real mail", async ({
   page,
@@ -89,7 +90,7 @@ test("landing, host demo, and navigation are mobile friendly", async ({
     .click();
   await expect(
     page.getByRole("heading", {
-      name: "94% for you. 6% keeps Squid swimming.",
+      name: "A 6% Squid fee. Stripe’s fee at cost.",
     }),
   ).toBeVisible();
   await nav.getByRole("button", { name: "Settings", exact: true }).click();
@@ -141,6 +142,31 @@ test("guest can preview pricing, charge, and receive a demo receipt without real
     ),
   ).toBe(true);
 });
+test("session controls wait for their JavaScript before accepting a stop", async ({
+  page,
+}) => {
+  let releaseScripts!: () => void;
+  const scriptsReady = new Promise<void>((resolve) => {
+    releaseScripts = resolve;
+  });
+  await page.route("**/_next/**/*.js", async (route) => {
+    await scriptsReady;
+    await route.continue();
+  });
+  const finish = page.getByRole("button", { name: "Finish charging" });
+  try {
+    await page.goto("/session/demo", { waitUntil: "commit" });
+    await expect(finish).toBeVisible();
+    await expect(finish).toBeDisabled();
+  } finally {
+    releaseScripts();
+  }
+  await expect(finish).toBeEnabled();
+  await finish.click();
+  await expect(
+    page.getByRole("heading", { name: "Ready for your next adventure." }),
+  ).toBeVisible();
+});
 test("host generates a downloadable QR sticker with a real guest URL", async ({
   page,
 }) => {
@@ -156,13 +182,46 @@ test("host generates a downloadable QR sticker with a real guest URL", async ({
   await expect(
     page.getByRole("textbox", { name: "Guest charging link" }),
   ).toHaveValue(`${origin}/c/demo`);
-  const download = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Download SVG" }).click();
-  expect((await download).suggestedFilename()).toBe(
-    "squid-the-weekender-sticker.svg",
-  );
+  for (const [button, file] of [
+    ["Instruction sheet", "squid-the-weekender-instructions.pdf"],
+    ["Sticker", "squid-the-weekender-sticker.pdf"],
+  ]) {
+    const download = page.waitForEvent("download");
+    await page.getByRole("button", { name: button, exact: true }).click();
+    const pdf = await download;
+    expect(pdf.suggestedFilename()).toBe(file);
+    const bytes = await readFile((await pdf.path())!);
+    expect(bytes.subarray(0, 5).toString()).toBe("%PDF-");
+  }
   await page.getByRole("button", { name: "Close dialog" }).click();
   await expect(page.getByRole("dialog")).not.toBeVisible();
+});
+test("charger onboarding waits for JavaScript before accepting a click", async ({
+  page,
+}) => {
+  let releaseScripts!: () => void;
+  const scriptsReady = new Promise<void>((resolve) => {
+    releaseScripts = resolve;
+  });
+  await page.route("**/_next/**/*.js", async (route) => {
+    await scriptsReady;
+    await route.continue();
+  });
+  const add = page
+    .getByRole("button", { name: "Add a charger", exact: true })
+    .first();
+  try {
+    await page.goto("/demo?onboarding=1", { waitUntil: "commit" });
+    await expect(add).toBeVisible();
+    await expect(add).toBeDisabled();
+  } finally {
+    releaseScripts();
+  }
+  await expect(add).toBeEnabled();
+  await add.click();
+  await expect(
+    page.getByRole("heading", { name: "Tell us about your place." }),
+  ).toBeVisible();
 });
 test("host can add a demo charger and filter it", async ({
   page,
@@ -176,12 +235,19 @@ test("host can add a demo charger and filter it", async ({
   await page
     .getByLabel("Property name", { exact: true })
     .fill("Bluebird Cabin");
-  await page.getByLabel("Street address").fill("12 Forest Lane");
-  await page.getByLabel("City", { exact: true }).fill("Asheville");
-  await page.getByLabel("State", { exact: true }).fill("NC");
-  await page.getByLabel("Latitude").fill("35.5951");
-  await page.getByLabel("Longitude").fill("-82.5515");
+  await page
+    .getByRole("combobox", { name: "Property address" })
+    .fill("12 Forest");
+  await page
+    .getByRole("option", { name: "12 Forest Lane, Asheville, NC" })
+    .click();
+  await expect(page.getByLabel("Latitude")).toHaveCount(0);
+  await expect(page.getByLabel("Longitude")).toHaveCount(0);
+  await expect(page.getByLabel("Time zone")).toHaveCount(0);
   await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(
+    page.getByLabel("Station identity", { exact: true }),
+  ).toHaveValue(/^bluebird-cabin-[a-f0-9]{6}$/);
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await page
     .getByRole("dialog")
@@ -201,6 +267,62 @@ test("host can add a demo charger and filter it", async ({
   await expect(
     page.getByRole("heading", { name: "The Weekender", exact: true }),
   ).not.toBeVisible();
+});
+test("new hosts get a payout step and editing an address clears its selection", async ({
+  page,
+}) => {
+  const writes: string[] = [];
+  page.on("request", (r) => {
+    // Analytics beacons are POSTs too; only Squid's own endpoints count.
+    const url = new URL(r.url());
+    if (
+      r.method() === "POST" &&
+      url.origin === new URL(origin).origin &&
+      !url.pathname.startsWith("/ingest/")
+    )
+      writes.push(r.url());
+  });
+  await page.goto("/demo?onboarding=1");
+  await page
+    .getByRole("button", { name: "Add a charger", exact: true })
+    .first()
+    .click();
+  await page
+    .getByLabel("Property name", { exact: true })
+    .fill("Bluebird Cabin");
+  const address = page.getByRole("combobox", { name: "Property address" });
+  await address.fill("12 Forest");
+  await page
+    .getByRole("option", { name: "12 Forest Lane, Asheville, NC" })
+    .click();
+  await address.fill("18 Ocean");
+  await expect(
+    page.getByRole("button", { name: "Continue", exact: true }),
+  ).toBeDisabled();
+  await page
+    .getByRole("option", { name: "18 Ocean Avenue, San Diego, CA" })
+    .waitFor();
+  await address.press("ArrowDown");
+  await address.press("Enter");
+  await expect(address).toHaveValue("18 Ocean Avenue, San Diego, CA");
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "A home for your earnings." }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page
+    .getByRole("button", { name: "Finish demo setup", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Bluebird Cabin" }),
+  ).toBeVisible();
+  expect(writes).toEqual([]);
 });
 test("public requests cannot control host chargers or private guest sessions", async ({
   request,
@@ -231,4 +353,110 @@ test("public requests cannot control host chargers or private guest sessions", a
       })
     ).status(),
   ).toBe(400);
+});
+test("clicking a charger card opens its own dashboard with a QR download prompt", async ({
+  page,
+}) => {
+  await page.goto("/demo");
+  await page
+    .getByRole("button", { name: "The Weekender", exact: true })
+    .first()
+    .click();
+  await expect(page).toHaveURL(/charger=/);
+  await expect(
+    page.getByRole("heading", { name: "The Weekender", level: 1 }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Ready for guests" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Download and print the QR code for your charger", {
+      exact: false,
+    }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Download & print QR code" }).click();
+  await expect(
+    page.getByRole("img", {
+      name: "Printable Squid QR sticker for The Weekender",
+    }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Close dialog" }).click();
+  await page.getByRole("button", { name: "All chargers" }).click();
+  await expect(page).not.toHaveURL(/charger=/);
+  await expect(
+    page.getByRole("heading", { name: "Your place. Good energy." }),
+  ).toBeVisible();
+});
+test("host edits charger settings in a modal and can sign out", async ({
+  page,
+  isMobile,
+}) => {
+  await page.goto("/demo?charger=demo-cabin");
+  const settings = page.locator(".charger-settings");
+  await expect(
+    settings.getByRole("heading", { name: "Charger settings" }),
+  ).toBeVisible();
+  await expect(
+    settings.getByText("The Weekender", { exact: true }),
+  ).toBeVisible();
+  await expect(settings.getByRole("textbox")).toHaveCount(0);
+  await settings.getByRole("button", { name: "Edit settings" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(
+    dialog.getByRole("heading", { name: "Edit charger settings" }),
+  ).toBeVisible();
+  const save = dialog.getByRole("button", { name: "Save changes" });
+  await expect(save).toBeDisabled();
+  await dialog
+    .getByLabel("Property name", { exact: true })
+    .fill("The Weekender Loft");
+  await dialog.getByLabel("Price per kWh (USD)").fill("0.42");
+  await save.click();
+  await expect(dialog).not.toBeVisible();
+  await expect(settings.getByRole("status")).toContainText("Saved");
+  await expect(settings.getByText("$0.42 / kWh")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "The Weekender Loft", level: 1 }),
+  ).toBeVisible();
+  await expect(page.locator(".charger-meta")).toContainText("$0.42 / kWh");
+  await settings.getByRole("button", { name: "Edit settings" }).click();
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).not.toBeVisible();
+  await page
+    .locator(isMobile ? ".dashboard-topbar" : ".sidebar")
+    .getByRole("button", { name: "Leave demo" })
+    .click();
+  await expect(page).toHaveURL(`${origin}/`);
+});
+test("an offline charger hides the guest pay flow", async ({ page }) => {
+  await page.goto("/c/demo?offline=1");
+  await expect(
+    page.getByRole("heading", { name: "This charger is offline right now." }),
+  ).toBeVisible();
+  await expect(page.getByText("Offline", { exact: true })).toBeVisible();
+  await expect(page.getByRole("slider")).toHaveCount(0);
+  await expect(page.getByRole("checkbox")).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Try a demo charge" }),
+  ).toHaveCount(0);
+  await expect(page.getByText("/ kWh")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Check again" })).toBeVisible();
+});
+test("hosts see each charger's network status", async ({ page }) => {
+  await page.goto("/demo?tab=chargers");
+  const weekender = page.locator(".charger-card", { hasText: "The Weekender" });
+  const cottage = page.locator(".charger-card", {
+    hasText: "Saltwater Cottage",
+  });
+  await expect(weekender.getByText("Online", { exact: true })).toBeVisible();
+  await expect(cottage.getByText("Offline", { exact: true })).toBeVisible();
+  await cottage
+    .getByRole("button", { name: "Saltwater Cottage", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Ready, but offline" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Guests can’t charge until your charger reconnects."),
+  ).toBeVisible();
 });

@@ -6,6 +6,8 @@ const names = [
   "IVORA_API_URL",
   "IVORA_API_KEY",
   "IVORA_TENANT_ID",
+  "GOOGLE_MAPS_ADDRESS_API_KEY",
+  "OCPP_CREDENTIAL_KEY",
   "STRIPE_SECRET_KEY",
   "STRIPE_WEBHOOK_SECRET",
   "CRON_SECRET",
@@ -65,5 +67,13 @@ if (process.env.SUPABASE_SERVICE_ROLE_KEY && process.env.SUPABASE_URL) {
   console.log(
     "Email rate-limit schema:",
     emailError ? "not ready — apply all migrations" : "ready",
+  );
+  const { error: credentialsError } = await client
+    .from("squid_charger_credentials")
+    .select("property_id")
+    .limit(0);
+  console.log(
+    "Charger password schema:",
+    credentialsError ? "not ready — apply all migrations" : "ready",
   );
 }
