@@ -9,12 +9,12 @@ export const compatibleChargers: ChargerBrand[] = [
       {
         model: "Terra AC Wallbox - 40A",
         guideUrl:
-          "https://new.abb.com/ev-charging/terra-ac-wallbox/digital-tools",
+          "https://library.e.abb.com/public/013efbe844a94afea2d989eb4291f9ed/TerraConfigApp%20Step%20by%20Step%20Guide.pdf",
       },
       {
         model: "Terra AC Wallbox - 80A",
         guideUrl:
-          "https://new.abb.com/ev-charging/terra-ac-wallbox/digital-tools",
+          "https://library.e.abb.com/public/013efbe844a94afea2d989eb4291f9ed/TerraConfigApp%20Step%20by%20Step%20Guide.pdf",
       },
     ],
   },
@@ -52,29 +52,24 @@ export const compatibleChargers: ChargerBrand[] = [
     brand: "Eaton",
     models: [
       {
-        model: "Eaton Smart Breaker",
-        guideUrl:
-          "https://device.report/m/924d413c661b3fd655342423c50e1d05246785db7487de0081fad40f41a4a8df",
-      },
-      {
         model: "Green Motion Building",
         guideUrl:
-          "https://www.eaton.com/content/dam/eaton/products/emobility/ev-charging/na-eaton-ac-charging/green-motion-building-and-green-motion-fleet-commissioning-guide-IL191013EN.pdf",
+          "https://www.eaton.com/content/dam/eaton/products/emobility/ev-charging/na-eaton-ac-charging/ocpp-commissioning-guide-IL191036EN.pdf",
       },
       {
         model: "Green Motion Building Pro",
         guideUrl:
-          "https://www.eaton.com/content/dam/eaton/products/emobility/ev-charging/na-eaton-ac-charging/green-motion-building-and-green-motion-fleet-commissioning-guide-IL191013EN.pdf",
+          "https://www.eaton.com/content/dam/eaton/products/emobility/ev-charging/na-eaton-ac-charging/ocpp-commissioning-guide-IL191036EN.pdf",
       },
       {
         model: "Green Motion Fleet",
         guideUrl:
-          "https://www.eaton.com/content/dam/eaton/products/emobility/ev-charging/na-eaton-ac-charging/green-motion-building-and-green-motion-fleet-commissioning-guide-IL191013EN.pdf",
+          "https://www.eaton.com/content/dam/eaton/products/emobility/ev-charging/na-eaton-ac-charging/ocpp-commissioning-guide-IL191036EN.pdf",
       },
       {
         model: "Green Motion Fleet Pro",
         guideUrl:
-          "https://www.eaton.com/content/dam/eaton/products/emobility/ev-charging/na-eaton-ac-charging/green-motion-building-and-green-motion-fleet-commissioning-guide-IL191013EN.pdf",
+          "https://www.eaton.com/content/dam/eaton/products/emobility/ev-charging/na-eaton-ac-charging/ocpp-commissioning-guide-IL191036EN.pdf",
       },
     ],
   },
@@ -110,7 +105,8 @@ export const compatibleChargers: ChargerBrand[] = [
     models: [
       {
         model: "Charging Genius",
-        guideUrl: "https://www.eocharging.com/support",
+        guideUrl:
+          "https://asset.eezybridge.com/ad7e7626-8f4a-4edb-b78d-9ca040e321dd/1824560",
       },
     ],
   },
@@ -175,17 +171,17 @@ export const compatibleChargers: ChargerBrand[] = [
       {
         model: "HBE-AC48A01HW-U-BHSAEW",
         guideUrl:
-          "https://openchargealliance.org/participants/shenzhen-hb-electronics-co-ltd/",
+          "https://manuals.plus/hb-electronic/hbe48a01hw-charging-piles-for-electric-vehicles-manual",
       },
       {
         model: "HBE-AC48A01HW-U-SHEAED",
         guideUrl:
-          "https://openchargealliance.org/participants/shenzhen-hb-electronics-co-ltd/",
+          "https://manuals.plus/hb-electronic/hbe48a01hw-charging-piles-for-electric-vehicles-manual",
       },
       {
         model: "HBE-AC48A01HW-U-SHSAED4GF",
         guideUrl:
-          "https://openchargealliance.org/participants/shenzhen-hb-electronics-co-ltd/",
+          "https://manuals.plus/hb-electronic/hbe48a01hw-charging-piles-for-electric-vehicles-manual",
       },
     ],
   },
@@ -210,11 +206,6 @@ export const compatibleChargers: ChargerBrand[] = [
         model: "EVC12/48AC",
         guideUrl:
           "https://www.manualslib.com/manual/3389533/Joint-Evc12-Series.html",
-      },
-      {
-        model: "EVL007",
-        guideUrl:
-          "https://shop.swtchenergy.com/pages/swtch-home-charger-hardware",
       },
       {
         model: "JointTech Espen EVC 10 48A",
@@ -249,12 +240,12 @@ export const compatibleChargers: ChargerBrand[] = [
       {
         model: "EVM002 48A",
         guideUrl:
-          "https://manualzz.com/doc/81542370/ledvance-evse-c2-electric-vehicle-ac-charger-user-manual",
+          "https://www.ledvance.com/00_Free_To_Use/asset-13171287_ledvance_phase_ev_installation_guide.pdf",
       },
       {
         model: "EVM002 80A",
         guideUrl:
-          "https://manualzz.com/doc/81542370/ledvance-evse-c2-electric-vehicle-ac-charger-user-manual",
+          "https://www.ledvance.com/00_Free_To_Use/asset-13171287_ledvance_phase_ev_installation_guide.pdf",
       },
     ],
   },
@@ -278,7 +269,8 @@ export const compatibleChargers: ChargerBrand[] = [
     models: [
       {
         model: "LG L2 EVW011SK-SL",
-        guideUrl: "https://www.lg.com/us/support/product/lg-EVW011SK-SN.AUS",
+        guideUrl:
+          "https://www.lg.com/us/business/download/resources/CT41052931/EVW011SK-SN_Setting_ENG_US_231211%5B20240125_035315%5D.pdf",
       },
     ],
   },
@@ -343,7 +335,7 @@ export const compatibleChargers: ChargerBrand[] = [
       {
         model: "EVC48",
         guideUrl:
-          "https://www.rablighting.com/downloads/instructions/evc48_instructions.pdf",
+          "https://www.rablighting.com/sites/default/files/downloads/Electric_Vehicle_Chargers_Instructions.pdf",
       },
     ],
   },
@@ -367,11 +359,11 @@ export const compatibleChargers: ChargerBrand[] = [
     models: [
       {
         model: "Spark AC 48A",
-        guideUrl: "https://soneilspark.com/pages/ac-commercial",
+        guideUrl: "https://soneilspark.com/pages/help-and-support",
       },
       {
         model: "Spark AC 80A",
-        guideUrl: "https://soneilspark.com/pages/ac-commercial",
+        guideUrl: "https://soneilspark.com/pages/help-and-support",
       },
     ],
   },
@@ -380,15 +372,18 @@ export const compatibleChargers: ChargerBrand[] = [
     models: [
       {
         model: "EVP1100",
-        guideUrl: "https://turnongreen.com/product-resources/",
+        guideUrl:
+          "https://turnongreen.com/wp-content/uploads/evp1100-installation-manual.pdf",
       },
       {
         model: "EVP1900",
-        guideUrl: "https://turnongreen.com/product-resources/",
+        guideUrl:
+          "https://turnongreen.com/wp-content/uploads/evp1900-installation-manual.pdf",
       },
       {
         model: "EVP700",
-        guideUrl: "https://turnongreen.com/product-resources/",
+        guideUrl:
+          "https://turnongreen.com/wp-content/uploads/2022/04/evp700-installation-manual.pdf",
       },
     ],
   },

@@ -25,18 +25,6 @@ export default function Developers() {
           you can have it welcoming guests in about fifteen minutes. No
           technical background needed.
         </p>
-        <h2>Will my charger work?</h2>
-        <p>
-          These brands and models work with Squid. Search for yours — each one
-          links to a short guide showing where its connection settings live.
-        </p>
-        <ChargerTable />
-        <p>
-          Not on the list? If your charger’s app or settings page has a section
-          called <strong>OCPP</strong> (the standard language smart chargers use
-          to talk to platforms like Squid), it will very likely work too. When
-          in doubt, ask your installer or the charger’s manufacturer.
-        </p>
         <h2>Three steps to good energy.</h2>
         <ol>
           <li>
@@ -46,10 +34,12 @@ export default function Developers() {
           </li>
           <li>
             <strong>Paste them into your charger’s settings.</strong> Open your
-            charger’s app or settings page — the guide linked in the table shows
-            exactly where. Find the section called OCPP (sometimes “server” or
-            “backend”), paste the three values, choose <strong>OCPP 1.6</strong>{" "}
-            if it asks, and restart the charger.
+            charger’s app or settings page — the guide linked in the table below
+            shows exactly where. Find the section called <strong>OCPP</strong>{" "}
+            (the standard language smart chargers use to talk to platforms like
+            Squid — sometimes labeled “server” or “backend”), paste the three
+            values, choose <strong>OCPP 1.6</strong> if it asks, and restart the
+            charger.
           </li>
           <li>
             <strong>Come back to Squid and refresh.</strong> When your charger
@@ -62,6 +52,17 @@ export default function Developers() {
           nothing to configure on your router. If it doesn’t come online after a
           restart, double-check the three values for typos; that’s the cause
           nine times out of ten.
+        </p>
+        <h2>Will my charger work?</h2>
+        <p>
+          These brands and models work with Squid. Search for yours — each one
+          links to a short guide showing where its connection settings live.
+        </p>
+        <ChargerTable />
+        <p>
+          Not on the list? If your charger’s app or settings page has an OCPP
+          section, it will very likely work too. When in doubt, ask your
+          installer or the charger’s manufacturer.
         </p>
         <div className="notice">
           Squid is designed for Airbnb and other vacation-rental hosts. It is
