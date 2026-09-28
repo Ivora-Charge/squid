@@ -152,9 +152,8 @@ export function QRSticker({
       </div>
       <ErrorMessage message={error} />
       <p className="fine-print">
-        Both download as PDFs. The instruction sheet prints on US Letter; the
-        sticker is sized 3 × 4.5 inches. For outdoor chargers, use a
-        weatherproof label.{" "}
+        Both download as US Letter PDFs. Cut the 3 × 4.5 inch sticker out along
+        its dashed line. For outdoor chargers, use a weatherproof label.{" "}
         {demo ? "This QR opens the demo guest experience." : ""}
       </p>
     </Modal>

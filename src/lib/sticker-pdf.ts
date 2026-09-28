@@ -119,23 +119,30 @@ function drawQr(
   }
 }
 
+const STICKER = { width: 3 * INCH, height: 4.5 * INCH };
+// Artwork runs past the cut line so a slightly-off cut shows no white edge.
+const BLEED = 0.0625 * INCH;
+
 function drawSticker(page: PDFPage, fonts: Fonts, link: string, name: string) {
-  // Same artwork as the on-screen preview, scaled to 3 × 4.5 in.
-  const s = page.getWidth() / 400;
-  const h = page.getHeight();
-  const y = (svgY: number) => h - svgY * s;
+  // Same artwork as the on-screen preview, scaled to 3 × 4.5 in and centered
+  // on the sheet. Text centers on the page, which is also the sticker center.
+  const left = (page.getWidth() - STICKER.width) / 2;
+  const bottom = (page.getHeight() - STICKER.height) / 2;
+  const top = bottom + STICKER.height;
+  const s = STICKER.width / 400;
+  const y = (svgY: number) => top - svgY * s;
   page.drawRectangle({
-    x: 0,
-    y: 0,
-    width: page.getWidth(),
-    height: h,
+    x: left - BLEED,
+    y: bottom - BLEED,
+    width: STICKER.width + BLEED * 2,
+    height: STICKER.height + BLEED * 2,
     color: night,
   });
   centered(page, "squid", y(65), fonts.bold, 38 * s, coral);
   centered(page, "BY IVORA", y(92), fonts.regular, 11 * s, mist, 3 * s);
   centered(page, "A little charge.", y(145), fonts.bold, 28 * s, cream);
   centered(page, "A better stay.", y(180), fonts.bold, 28 * s, coral);
-  drawQr(page, link, 54 * s, y(200 + 292), 292 * s);
+  drawQr(page, link, left + 54 * s, y(200 + 292), 292 * s);
   centered(page, "SCAN. PLUG IN. UNWIND.", y(530), fonts.bold, 16 * s, cream);
   centered(page, name.slice(0, 40), y(558), fonts.regular, 12 * s, mist);
   centered(
@@ -145,6 +152,23 @@ function drawSticker(page: PDFPage, fonts: Fonts, link: string, name: string) {
     fonts.regular,
     10 * s,
     mist,
+  );
+  page.drawRectangle({
+    x: left,
+    y: bottom,
+    width: STICKER.width,
+    height: STICKER.height,
+    borderColor: mist,
+    borderWidth: 0.75,
+    borderDashArray: [5, 4],
+  });
+  centered(
+    page,
+    "Cut along the dashed line.",
+    bottom - BLEED - 22,
+    fonts.regular,
+    10,
+    slate,
   );
 }
 
@@ -201,7 +225,7 @@ function drawInstructions(
 
   // Long names and host notes borrow their space from the QR.
   const qr =
-    3.5 * INCH - (title.length - 1) * 18 - Math.max(note.length - 2, 0) * 15;
+    3.75 * INCH - (title.length - 1) * 18 - Math.max(note.length - 2, 0) * 15;
   const frame = 10;
   y -= 10 + frame + qr;
   page.drawRectangle({
@@ -279,15 +303,6 @@ function drawInstructions(
       }),
     );
   }
-
-  centered(
-    page,
-    `Trouble scanning? Visit ${link.replace(/^https?:\/\//, "")}`,
-    0.6 * INCH,
-    fonts.regular,
-    10,
-    slate,
-  );
 }
 
 export type StickerPdfKind = "instructions" | "sticker";
@@ -307,17 +322,12 @@ export async function stickerPdf(
     regular: await pdf.embedFont(StandardFonts.Helvetica),
     bold: await pdf.embedFont(StandardFonts.HelveticaBold),
   };
+  // Both print on US Letter.
+  const page = pdf.addPage([8.5 * INCH, 11 * INCH]);
   if (kind === "sticker") {
-    drawSticker(pdf.addPage([3 * INCH, 4.5 * INCH]), fonts, link, name);
+    drawSticker(page, fonts, link, name);
   } else {
-    // US Letter.
-    drawInstructions(
-      pdf.addPage([8.5 * INCH, 11 * INCH]),
-      fonts,
-      link,
-      name,
-      instructions,
-    );
+    drawInstructions(page, fonts, link, name, instructions);
   }
   return pdf.save();
 }
