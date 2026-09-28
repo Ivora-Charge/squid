@@ -57,11 +57,24 @@ export default function Privacy() {
           charger control and metering. Ivora receives non-secret payment
           references, not your card details or Stripe credentials.
         </p>
+        <h2>Analytics</h2>
+        <p>
+          When the operator enables them, PostHog and Google Analytics measure
+          how the site is used: pages visited, buttons pressed, device and
+          browser type, and approximate location. PostHog may also record
+          sessions to help us fix problems; everything typed into forms is
+          hidden from those recordings, and charger passwords are never
+          recorded. Sign-in and password-reset links are not sent to either
+          service. Card details are entered on Stripe’s own page and are never
+          seen by analytics. PostHog and Google handle this data under their own
+          privacy policies: <a href="https://posthog.com/privacy">PostHog</a>{" "}
+          and <a href="https://policies.google.com/privacy">Google</a>.
+        </p>
         <h2>The demo</h2>
         <p>
           Demo chargers are saved only in your browser’s local storage. You can
-          clear site data in your browser to reset the demo. No analytics or
-          advertising trackers are included in this application.
+          clear site data in your browser to reset the demo. Squid includes no
+          advertising trackers.
         </p>
       </main>
     </div>

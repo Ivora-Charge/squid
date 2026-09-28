@@ -1774,7 +1774,8 @@ function ChargerSetup({
             Preset OCPP password
             <div className="copy-field">
               <input
-                className="connection-password"
+                // ph-no-capture keeps the password out of session replays.
+                className="connection-password ph-no-capture"
                 value={credentials.password}
                 readOnly
                 spellCheck={false}

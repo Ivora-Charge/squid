@@ -273,7 +273,14 @@ test("new hosts get a payout step and editing an address clears its selection", 
 }) => {
   const writes: string[] = [];
   page.on("request", (r) => {
-    if (r.method() === "POST") writes.push(r.url());
+    // Analytics beacons are POSTs too; only Squid's own endpoints count.
+    const url = new URL(r.url());
+    if (
+      r.method() === "POST" &&
+      url.origin === new URL(origin).origin &&
+      !url.pathname.startsWith("/ingest/")
+    )
+      writes.push(r.url());
   });
   await page.goto("/demo?onboarding=1");
   await page
