@@ -1,9 +1,10 @@
 "use client";
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
-import { Copy, Check, Download, Printer, ArrowUpRight } from "lucide-react";
-import { Modal } from "./ui";
+import { Copy, Check, Download, ArrowUpRight } from "lucide-react";
+import { Busy, ErrorMessage, Modal } from "./ui";
 import type { Property } from "@/lib/types";
+import type { StickerPdfKind } from "@/lib/sticker-pdf";
 function escapeXml(value: string) {
   return value.replace(
     /[<>&"']/g,
@@ -29,6 +30,8 @@ export function QRSticker({
   const [svg, setSvg] = useState("");
   const [url, setUrl] = useState("");
   const [copied, setCopied] = useState(false);
+  const [busy, setBusy] = useState<StickerPdfKind | null>(null);
+  const [error, setError] = useState("");
   useEffect(() => {
     let active = true;
     const link = `${window.location.origin}/c/${demo ? "demo" : property.slug}`;
@@ -57,14 +60,30 @@ export function QRSticker({
   const image = svg
     ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
     : "";
-  function download() {
-    const blob = new Blob([svg], { type: "image/svg+xml" });
-    const href = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = href;
-    a.download = `squid-${property.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-sticker.svg`;
-    a.click();
-    URL.revokeObjectURL(href);
+  async function download(kind: StickerPdfKind) {
+    setBusy(kind);
+    setError("");
+    try {
+      // pdf-lib is sizable, so only load it when a host asks for a PDF.
+      const { stickerPdf } = await import("@/lib/sticker-pdf");
+      const bytes = await stickerPdf(
+        kind,
+        url,
+        property.name,
+        property.instructions,
+      );
+      const blob = new Blob([bytes as BlobPart], { type: "application/pdf" });
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = href;
+      a.download = `squid-${property.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${kind}.pdf`;
+      a.click();
+      URL.revokeObjectURL(href);
+    } catch {
+      setError("We couldn’t make that PDF. Please try again.");
+    } finally {
+      setBusy(null);
+    }
   }
   return (
     <Modal title="A little sticker. A warm welcome." onClose={onClose}>
@@ -95,7 +114,7 @@ export function QRSticker({
           {copied ? <Check size={17} /> : <Copy size={17} />}
         </button>
       </div>
-      <div className="form-actions">
+      <div className="form-actions sticker-actions">
         <a
           className="button secondary"
           href={url}
@@ -106,18 +125,37 @@ export function QRSticker({
         </a>
         <button
           className="button secondary"
-          disabled={!svg}
-          onClick={() => window.print()}
+          disabled={!url || !!busy}
+          onClick={() => download("instructions")}
         >
-          <Printer size={16} /> Print
+          {busy === "instructions" ? (
+            <Busy>Making PDF…</Busy>
+          ) : (
+            <>
+              <Download size={16} /> Instruction sheet
+            </>
+          )}
         </button>
-        <button className="button primary" disabled={!svg} onClick={download}>
-          <Download size={16} /> Download SVG
+        <button
+          className="button primary"
+          disabled={!url || !!busy}
+          onClick={() => download("sticker")}
+        >
+          {busy === "sticker" ? (
+            <Busy>Making PDF…</Busy>
+          ) : (
+            <>
+              <Download size={16} /> Sticker
+            </>
+          )}
         </button>
       </div>
+      <ErrorMessage message={error} />
       <p className="fine-print">
-        Print at least 3 inches wide. For outdoor chargers, use a weatherproof
-        label. {demo ? "This QR opens the demo guest experience." : ""}
+        Both download as PDFs. The instruction sheet prints on US Letter; the
+        sticker is sized 3 × 4.5 inches. For outdoor chargers, use a
+        weatherproof label.{" "}
+        {demo ? "This QR opens the demo guest experience." : ""}
       </p>
     </Modal>
   );

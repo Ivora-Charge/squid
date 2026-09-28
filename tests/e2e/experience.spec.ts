@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { readFile } from "node:fs/promises";
 const origin = process.env.E2E_BASE_URL || "http://localhost:3100";
 test("host sign-in explains email delivery without sending real mail", async ({
   page,
@@ -181,11 +182,17 @@ test("host generates a downloadable QR sticker with a real guest URL", async ({
   await expect(
     page.getByRole("textbox", { name: "Guest charging link" }),
   ).toHaveValue(`${origin}/c/demo`);
-  const download = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Download SVG" }).click();
-  expect((await download).suggestedFilename()).toBe(
-    "squid-the-weekender-sticker.svg",
-  );
+  for (const [button, file] of [
+    ["Instruction sheet", "squid-the-weekender-instructions.pdf"],
+    ["Sticker", "squid-the-weekender-sticker.pdf"],
+  ]) {
+    const download = page.waitForEvent("download");
+    await page.getByRole("button", { name: button, exact: true }).click();
+    const pdf = await download;
+    expect(pdf.suggestedFilename()).toBe(file);
+    const bytes = await readFile((await pdf.path())!);
+    expect(bytes.subarray(0, 5).toString()).toBe("%PDF-");
+  }
   await page.getByRole("button", { name: "Close dialog" }).click();
   await expect(page.getByRole("dialog")).not.toBeVisible();
 });

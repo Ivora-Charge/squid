@@ -2027,6 +2027,9 @@ th:last-child {
   box-shadow: 0 8px 35px #0006;
   border-radius: 14px;
 }
+.sticker-actions {
+  flex-wrap: wrap;
+}
 .help-content h3 {
   font-size: 19px;
 }
@@ -3545,6 +3548,10 @@ input[type="range"] {
   }
   .sticker-preview {
     padding: 17px;
+  }
+  .sticker-actions > .button {
+    flex: 1 1 auto;
+    justify-content: center;
   }
   .sticker-preview > img {
     width: 180px;
