@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   link: vi.fn(),
   upsert: vi.fn(),
   durable: vi.fn(),
+  forget: vi.fn(),
   owned: vi.fn(),
   user: vi.fn(),
   StripeError: class extends Error {
@@ -26,7 +27,10 @@ vi.mock("stripe", () => ({
     v2 = { core: { accounts: { create: mocks.create } } };
   },
 }));
-vi.mock("@/lib/server/ivora", () => ({ durable: mocks.durable }));
+vi.mock("@/lib/server/ivora", () => ({
+  durable: mocks.durable,
+  forget: mocks.forget,
+}));
 vi.mock("@/lib/server/db", () => ({
   user: mocks.user,
   db: () => ({
@@ -212,6 +216,9 @@ it("explains when live Connect platform activation blocks onboarding", async () 
         "Squid’s Stripe platform must finish activation before payout setup. Your charger is saved; please contact Squid support.",
     });
     expect(mocks.upsert).not.toHaveBeenCalled();
+    expect(mocks.forget).toHaveBeenCalledWith(
+      `squid:connect:${host}:managed-risk:v1`,
+    );
   } finally {
     logged.mockRestore();
   }

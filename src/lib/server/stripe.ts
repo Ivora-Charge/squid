@@ -2,7 +2,7 @@ import "server-only";
 import Stripe from "stripe";
 import { appUrl, required } from "./config";
 import { checked, db, withLock } from "./db";
-import { durable } from "./ivora";
+import { durable, forget } from "./ivora";
 import { HttpError } from "./security";
 
 function connectFailure(stage: "account" | "link", error: unknown): never {
@@ -88,11 +88,12 @@ export async function onboarding(
     if (!id) {
       // A new key avoids cached failures from the old account configurations.
       const key = `squid:connect:${hostId}:managed-risk:v1`;
-      const account = await durable(
-        key,
-        { hostId, email },
-        async () => {
-          try {
+      let account: { id: string };
+      try {
+        account = await durable(
+          key,
+          { hostId, email },
+          async () => {
             const created = await stripe().v2.core.accounts.create(
               {
                 contact_email: email,
@@ -118,12 +119,19 @@ export async function onboarding(
               { apiVersion: "2026-08-26.preview", idempotencyKey: key },
             );
             return { id: created.id };
-          } catch (error) {
-            connectFailure("account", error);
-          }
-        },
-        true,
-      );
+          },
+          true,
+        );
+      } catch (error) {
+        // Stripe has confirmed that no account was created. Let the host retry
+        // after platform activation without inheriting a stale saved request.
+        if (
+          error instanceof Stripe.errors.StripeError &&
+          error.code === "account_create_activation_required"
+        )
+          await forget(key);
+        connectFailure("account", error);
+      }
       id = account.id;
       checked(
         await db()
