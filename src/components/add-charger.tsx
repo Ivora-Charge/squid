@@ -1,15 +1,7 @@
 "use client";
 import { browserId } from "@/lib/browser-id";
 import { useState } from "react";
-import {
-  ArrowRight,
-  ArrowLeft,
-  MapPin,
-  Plug,
-  Zap,
-  Check,
-  CreditCard,
-} from "lucide-react";
+import { ArrowRight, ArrowLeft, MapPin, Plug, Zap, Check } from "lucide-react";
 import { Busy, ErrorMessage, Modal, post } from "./ui";
 import { money, splitPayment } from "@/lib/money";
 import type { Property } from "@/lib/types";
@@ -21,27 +13,19 @@ import {
 } from "@/lib/onboarding";
 export function AddCharger({
   demo,
-  payoutsReady,
-  stripeConnected,
   onClose,
   onAdd,
-  onSave,
 }: {
   demo: boolean;
-  payoutsReady: boolean;
-  stripeConnected: boolean;
   onClose: () => void;
   onAdd: (property: Property) => void;
-  onSave: (property: Property) => void;
 }) {
   const [step, setStep] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [id] = useState(browserId);
   const [address, setAddress] = useState<AddressSelection | null>(null);
-  const [saved, setSaved] = useState<Property | null>(null);
-  const needsPayouts = !payoutsReady;
-  const lastStep = needsPayouts ? 3 : 2;
+  const lastStep = 2;
   const [form, setForm] = useState({
     name: "",
     connector_type: "J1772",
@@ -80,8 +64,8 @@ export function AddCharger({
         rate_cents: Math.round(Number(form.rate) * 100),
         instructions: form.instructions,
       };
-      let property = saved;
-      if (!property && demo) {
+      let property: Property;
+      if (demo) {
         const selected = demoAddresses.find((a) => a.id === address.token)!;
         property = {
           ...input,
@@ -100,24 +84,17 @@ export function AddCharger({
           location_id: 3,
           tariff_id: 3,
           ocpp_url: null,
-          published: true,
+          published: false,
           created_at: new Date().toISOString(),
         };
-      } else if (!property) {
+      } else {
         const result = await post<{ property: Property }>(
           "/api/host/properties",
           input,
         );
         property = result.property;
       }
-      setSaved(property);
-      onSave(property);
-      if (needsPayouts && !demo) {
-        const result = await post<{ url: string }>("/api/host/connect", {
-          propertyId: property.id,
-        });
-        window.location.assign(result.url);
-      } else onAdd(property);
+      onAdd(property);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -127,12 +104,7 @@ export function AddCharger({
   return (
     <Modal title="A new home for good energy" onClose={onClose}>
       <div className="wizard-steps">
-        {[
-          "Your place",
-          "Your charger",
-          "Your price",
-          ...(needsPayouts ? ["Payouts"] : []),
-        ].map((label, i) => (
+        {["Your place", "Your charger", "Your price"].map((label, i) => (
           <div className={step >= i ? "active" : ""} key={label}>
             <span>{step > i ? <Check size={13} /> : i + 1}</span>
             {label}
@@ -224,49 +196,6 @@ export function AddCharger({
             </div>
           </>
         )}
-        {step === 3 && needsPayouts && (
-          <>
-            <div className="form-intro">
-              <CreditCard />
-              <h3>A home for your earnings.</h3>
-              <p>
-                {stripeConnected
-                  ? "Finish your Stripe setup to receive charging payouts."
-                  : "Connect Stripe so your charging earnings reach your bank account."}
-              </p>
-            </div>
-            <div className="price-breakdown">
-              <p>
-                <span>Squid fee</span>
-                <span>6%</span>
-              </p>
-              <p>
-                <span>Stripe processing</span>
-                <span>2.9% + 30¢ per charge</span>
-              </p>
-              <p>
-                <span>You receive</span>
-                <strong>The rest of each charge</strong>
-              </p>
-            </div>
-            <p className="fine-print">
-              We’ll save your charger before opening Stripe. When you return,
-              your connection details will be ready. Guest payments stay off
-              until payouts and your charger are ready.
-            </p>
-            {saved && (
-              <div className="success-message" role="status">
-                <Check size={16} /> Your charger is saved. Continue to Stripe
-                whenever you’re ready.
-              </div>
-            )}
-            {demo && (
-              <div className="notice">
-                Demo payout setup. No Stripe account is created.
-              </div>
-            )}
-          </>
-        )}
         {step === 2 && (
           <>
             <div className="form-intro">
@@ -323,7 +252,7 @@ export function AddCharger({
         )}
         <ErrorMessage message={error} />
         <div className="form-actions">
-          {step > 0 && !saved && (
+          {step > 0 && (
             <button
               className="button secondary"
               type="button"
@@ -341,15 +270,7 @@ export function AddCharger({
               <Busy>Connecting…</Busy>
             ) : (
               <>
-                {step === 3
-                  ? demo
-                    ? "Finish demo setup"
-                    : saved
-                      ? "Continue to Stripe"
-                      : "Save & connect Stripe"
-                  : step === lastStep
-                    ? "Add charger"
-                    : "Continue"}
+                {step === lastStep ? "Add charger" : "Continue"}
                 <ArrowRight size={16} />
               </>
             )}

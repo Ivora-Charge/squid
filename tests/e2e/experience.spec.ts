@@ -268,7 +268,7 @@ test("host can add a demo charger and filter it", async ({
     page.getByRole("heading", { name: "The Weekender", exact: true }),
   ).not.toBeVisible();
 });
-test("new hosts get a payout step and editing an address clears its selection", async ({
+test("new hosts connect their charger before Stripe and editing an address clears its selection", async ({
   page,
 }) => {
   const writes: string[] = [];
@@ -307,21 +307,28 @@ test("new hosts get a payout step and editing an address clears its selection", 
   await expect(address).toHaveValue("18 Ocean Avenue, San Diego, CA");
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await page.getByRole("button", { name: "Continue", exact: true }).click();
-  await page.getByRole("button", { name: "Continue", exact: true }).click();
-  await expect(
-    page.getByRole("heading", { name: "A home for your earnings." }),
-  ).toBeVisible();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
-  await page
-    .getByRole("button", { name: "Finish demo setup", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Add charger", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Bluebird Cabin" }),
   ).toBeVisible();
+  await expect(page.getByText("OCPP station identity")).toBeVisible();
+  await expect(page.getByText("Preset OCPP password")).toBeVisible();
+  await expect(page.getByText("Next, set up your payouts")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Publish charger" }),
+  ).toBeDisabled();
+  await page.getByRole("button", { name: "Connect Stripe" }).click();
+  await expect(
+    page.getByText("Demo payout setup. No Stripe account is created."),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Publish charger" }),
+  ).toBeEnabled();
   expect(writes).toEqual([]);
 });
 test("public requests cannot control host chargers or private guest sessions", async ({

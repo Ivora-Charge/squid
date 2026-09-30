@@ -6,9 +6,16 @@ const mocks = vi.hoisted(() => ({
   link: vi.fn(),
   owned: vi.fn(),
   user: vi.fn(),
+  StripeError: class extends Error {
+    type = "StripeInvalidRequestError";
+    code = "account_invalid";
+    statusCode = 400;
+    requestId = "req_fixture";
+  },
 }));
 vi.mock("stripe", () => ({
   default: class {
+    static errors = { StripeError: mocks.StripeError };
     accountLinks = { create: mocks.link };
   },
 }));
@@ -73,6 +80,30 @@ it("keeps normal settings onboarding working", async () => {
       return_url: "https://squid.example/dashboard?tab=settings",
     }),
   );
+});
+it("returns a useful error without exposing Stripe's response details", async () => {
+  const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+  mocks.link.mockRejectedValueOnce(
+    new mocks.StripeError("Sensitive processor response"),
+  );
+  try {
+    const response = await POST(request({ propertyId: property }));
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      error:
+        "Stripe payout setup is unavailable. Your charger is saved; please contact Squid support.",
+    });
+    expect(logged).toHaveBeenCalledWith(
+      "[Squid Stripe Connect]",
+      expect.objectContaining({
+        stage: "link",
+        code: "account_invalid",
+        requestId: "req_fixture",
+      }),
+    );
+  } finally {
+    logged.mockRestore();
+  }
 });
 it("checks ownership and rejects arbitrary return URLs before creating a link", async () => {
   mocks.owned.mockRejectedValue(new HttpError(404, "Charger not found."));

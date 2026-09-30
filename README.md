@@ -80,7 +80,7 @@ Provider contracts: [Supabase custom email links](https://supabase.com/docs/refe
 
 ### Stripe Connect
 
-Enable Connect in the platform account. Each host completes Stripe Express onboarding from Settings. Guest Checkout uses a $25 manual-capture authorization and a destination charge to that host's saved connected account.
+Enable Connect in the platform account. Hosts connect their charger first, then complete Stripe Express onboarding from its setup page once the charger is online. They can manage payouts later in Settings. Guest Checkout uses a $25 manual-capture authorization and a destination charge to that host's saved connected account.
 
 Register `/api/stripe/webhook` for `checkout.session.completed` and `checkout.session.expired`. For local development:
 
@@ -103,7 +103,7 @@ Address suggestions fill the property's location and time zone automatically. Th
 
 New station identities use a shortened property name and a unique suffix, such as `bluebird-cabin-a1b2c3`, with at most 23 characters. Squid presets a random 16-character OCPP password using uppercase letters and digits without `I`, `O`, `0`, or `1`. The password is installed through Ivora's credentials API before setup completes. The `202609240001_charger_credentials.sql` migration stores it encrypted with AES-256-GCM in a service-only table. Keep `OCPP_CREDENTIAL_KEY` backed up and consistent across instances sharing this database; changing it prevents old passwords from being decrypted. Owners can retrieve their password from the authenticated setup dialog. Existing station identities and connection passwords stay valid; an existing charger can receive a preset through an explicit offline setup action.
 
-Hosts without ready Stripe payouts see a fourth onboarding step. Their charger is saved before Stripe opens, retries reuse the saved charger, and both Stripe return and refresh URLs reopen that charger's setup. Squid checks the actual account status before publishing. Preview the first-host flow at `/demo?onboarding=1`.
+Hosts save their charger and receive its OCPP connection details before starting Stripe payout onboarding. Once the charger appears online, its setup page offers Stripe Connect; retries reuse the saved charger, and both Stripe return and refresh URLs reopen that charger's setup. Squid checks the actual account status before publishing. Preview the first-host flow at `/demo?onboarding=1`.
 
 The app connects chargers to Ivora's OCPP service. Vercel runs the web application and server routes; it does not host persistent OCPP WebSockets. API schema: [Ivora OpenAPI](https://api.ivoracharge.co/openapi.json).
 
