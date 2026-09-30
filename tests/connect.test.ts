@@ -3,7 +3,12 @@ import { NextRequest } from "next/server";
 const host = "10000000-0000-4000-8000-000000000001",
   property = "20000000-0000-4000-8000-000000000001";
 const mocks = vi.hoisted(() => ({
+  accountId: "acct_test" as string | undefined,
+  create: vi.fn(),
+  retrieve: vi.fn(),
   link: vi.fn(),
+  upsert: vi.fn(),
+  durable: vi.fn(),
   owned: vi.fn(),
   user: vi.fn(),
   StripeError: class extends Error {
@@ -16,17 +21,21 @@ const mocks = vi.hoisted(() => ({
 vi.mock("stripe", () => ({
   default: class {
     static errors = { StripeError: mocks.StripeError };
+    accounts = { retrieve: mocks.retrieve };
     accountLinks = { create: mocks.link };
+    v2 = { core: { accounts: { create: mocks.create } } };
   },
 }));
+vi.mock("@/lib/server/ivora", () => ({ durable: mocks.durable }));
 vi.mock("@/lib/server/db", () => ({
   user: mocks.user,
   db: () => ({
     from: () => ({
+      upsert: mocks.upsert,
       select: () => ({
         eq: () => ({
           maybeSingle: async () => ({
-            data: { stripe_account_id: "acct_test" },
+            data: { stripe_account_id: mocks.accountId },
             error: null,
           }),
         }),
@@ -38,9 +47,22 @@ vi.mock("@/lib/server/db", () => ({
 }));
 vi.mock("@/lib/server/properties", () => ({ ownedProperty: mocks.owned }));
 import { POST } from "@/app/api/host/connect/route";
+import { payoutStatus } from "@/lib/server/stripe";
 import { HttpError } from "@/lib/server/security";
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.accountId = "acct_test";
+  mocks.create.mockResolvedValue({ id: "acct_new" });
+  mocks.retrieve.mockResolvedValue({
+    charges_enabled: false,
+    payouts_enabled: true,
+    capabilities: { transfers: "active" },
+  });
+  mocks.upsert.mockResolvedValue({ data: null, error: null });
+  mocks.durable.mockImplementation(
+    async (_key: string, _input: unknown, execute: () => Promise<unknown>) =>
+      execute(),
+  );
   vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://squid.example");
   vi.stubEnv("SUPABASE_URL", "https://supabase.example");
   vi.stubEnv("SUPABASE_ANON_KEY", "test-anon");
@@ -80,6 +102,53 @@ it("keeps normal settings onboarding working", async () => {
       return_url: "https://squid.example/dashboard?tab=settings",
     }),
   );
+});
+it("creates an Accounts v2 Express recipient for destination charges with a fresh key", async () => {
+  mocks.accountId = undefined;
+  expect((await POST(request({ propertyId: property }))).status).toBe(200);
+  expect(mocks.create).toHaveBeenCalledWith(
+    expect.objectContaining({
+      contact_email: "host@example.invalid",
+      dashboard: "express",
+      identity: { country: "US" },
+      configuration: {
+        recipient: {
+          capabilities: {
+            stripe_balance: { stripe_transfers: { requested: true } },
+          },
+        },
+      },
+      defaults: expect.objectContaining({
+        responsibilities: {
+          fees_collector: "application",
+          losses_collector: "application",
+        },
+      }),
+    }),
+    { idempotencyKey: `squid:connect:${host}:v2` },
+  );
+  expect(mocks.durable).toHaveBeenCalledWith(
+    `squid:connect:${host}:v2`,
+    { hostId: host, email: "host@example.invalid" },
+    expect.any(Function),
+    true,
+  );
+  expect(mocks.upsert).toHaveBeenCalledWith({
+    id: host,
+    stripe_account_id: "acct_new",
+  });
+  expect(mocks.link).toHaveBeenCalledWith(
+    expect.objectContaining({ account: "acct_new" }),
+  );
+});
+it("allows a recipient account to publish after transfers and payouts activate", async () => {
+  expect(await payoutStatus(host)).toEqual({ id: "acct_test", ready: true });
+  mocks.retrieve.mockResolvedValueOnce({
+    charges_enabled: false,
+    payouts_enabled: true,
+    capabilities: { transfers: "inactive" },
+  });
+  expect(await payoutStatus(host)).toEqual({ id: "acct_test", ready: false });
 });
 it("returns a useful error without exposing Stripe's response details", async () => {
   const logged = vi.spyOn(console, "error").mockImplementation(() => {});

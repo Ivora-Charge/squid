@@ -81,7 +81,7 @@ Provider contracts: [Supabase custom email links](https://supabase.com/docs/refe
 
 ### Stripe Connect
 
-Enable Connect in the platform account. Hosts connect their charger first, then complete Stripe Express onboarding from its setup page once the charger is online. They can manage payouts later in Settings. Guest Checkout uses a $25 manual-capture authorization and a destination charge to that host's saved connected account.
+Enable Connect in the platform account. Squid creates Accounts v2 Express recipient accounts for hosts and uses destination charges. Because this payment flow makes Squid responsible for connected-account losses, complete Stripe's [loss-liability acknowledgement and any verification in the Platform profile](https://dashboard.stripe.com/settings/connect/platform-profile) before enabling live onboarding. Hosts connect their charger first, then complete Stripe Express onboarding from its setup page once the charger is online. They can manage payouts later in Settings. Guest Checkout uses a $25 manual-capture authorization and a destination charge to that host's saved connected account.
 
 Register `/api/stripe/webhook` for `checkout.session.completed` and `checkout.session.expired`. For local development:
 

@@ -44,7 +44,13 @@ export async function payoutStatus(hostId: string) {
   const id = await hostAccount(hostId);
   if (!id || !process.env.STRIPE_SECRET_KEY) return { id, ready: false };
   const account = await stripe().accounts.retrieve(id);
-  return { id, ready: account.charges_enabled && account.payouts_enabled };
+  // Destination charges run on Squid's account. The host needs to receive
+  // transfers and payouts, but doesn't need to create card charges directly.
+  return {
+    id,
+    ready:
+      account.capabilities?.transfers === "active" && account.payouts_enabled,
+  };
 }
 export async function onboarding(
   hostId: string,
@@ -54,24 +60,35 @@ export async function onboarding(
   return withLock(`host:${hostId}`, async () => {
     let id = await hostAccount(hostId);
     if (!id) {
-      const key = `squid:connect:${hostId}`;
+      // The old v1 key can replay Stripe's cached 400 even after Connect is
+      // enabled. Keep a fresh key for the v2 account request.
+      const key = `squid:connect:${hostId}:v2`;
       const account = await durable(
         key,
         { hostId, email },
         async () => {
           try {
-            const created = await stripe().accounts.create(
+            const created = await stripe().v2.core.accounts.create(
               {
-                type: "express",
-                country: "US",
-                email,
-                capabilities: {
-                  card_payments: { requested: true },
-                  transfers: { requested: true },
+                contact_email: email,
+                dashboard: "express",
+                identity: { country: "US" },
+                configuration: {
+                  recipient: {
+                    capabilities: {
+                      stripe_balance: { stripe_transfers: { requested: true } },
+                    },
+                  },
                 },
-                business_profile: {
-                  product_description:
-                    "Electric vehicle charging at vacation rentals",
+                defaults: {
+                  responsibilities: {
+                    fees_collector: "application",
+                    losses_collector: "application",
+                  },
+                  profile: {
+                    product_description:
+                      "Electric vehicle charging at vacation rentals",
+                  },
                 },
                 metadata: { squid_host_id: hostId },
               },
