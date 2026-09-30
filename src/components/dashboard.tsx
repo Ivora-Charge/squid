@@ -1825,10 +1825,6 @@ function ChargerSetup({
               : "Prepare preset password"}
           </button>
         )}
-        <p className="fine-print">
-          The preset uses 16 easy-to-read characters. Enter it exactly as shown.
-          If your charger asks for a username, use the station identity.
-        </p>
         {!payoutsReady && (
           <div className="onboarding-payouts">
             <CreditCard size={20} />
