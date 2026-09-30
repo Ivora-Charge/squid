@@ -231,7 +231,7 @@ export function AddCharger({
                 <span>{money(example.fee)}</span>
               </p>
               <p>
-                <span>Stripe processing · 2.9% + 30¢</span>
+                <span>Est. Stripe processing · 2.9% + 30¢</span>
                 <span>{money(example.processing)}</span>
               </p>
               <p>
@@ -241,7 +241,8 @@ export function AddCharger({
             </div>
             <p className="fine-print">
               A $25 temporary hold is released down to the final charging cost.
-              Stripe Connect routes your share to your account.
+              Guests pay your Stripe account directly. Squid takes only its 6%
+              fee; Stripe charges processing to your account.
             </p>
             {demo && (
               <div className="notice">

@@ -54,9 +54,13 @@ beforeEach(() => {
   mocks.accountId = "acct_test";
   mocks.create.mockResolvedValue({ id: "acct_new" });
   mocks.retrieve.mockResolvedValue({
-    charges_enabled: false,
+    charges_enabled: true,
     payouts_enabled: true,
-    capabilities: { transfers: "active" },
+    capabilities: { card_payments: "active" },
+    controller: {
+      fees: { payer: "account" },
+      losses: { payments: "stripe" },
+    },
   });
   mocks.upsert.mockResolvedValue({ data: null, error: null });
   mocks.durable.mockImplementation(
@@ -103,7 +107,7 @@ it("keeps normal settings onboarding working", async () => {
     }),
   );
 });
-it("creates an Accounts v2 Express recipient for destination charges with a fresh key", async () => {
+it("creates an Accounts v2 Express merchant with Stripe-managed risk", async () => {
   mocks.accountId = undefined;
   expect((await POST(request({ propertyId: property }))).status).toBe(200);
   expect(mocks.create).toHaveBeenCalledWith(
@@ -112,23 +116,22 @@ it("creates an Accounts v2 Express recipient for destination charges with a fres
       dashboard: "express",
       identity: { country: "US" },
       configuration: {
-        recipient: {
-          capabilities: {
-            stripe_balance: { stripe_transfers: { requested: true } },
-          },
-        },
+        merchant: { capabilities: { card_payments: { requested: true } } },
       },
       defaults: expect.objectContaining({
         responsibilities: {
-          fees_collector: "application",
-          losses_collector: "application",
+          fees_collector: "stripe",
+          losses_collector: "stripe",
         },
       }),
     }),
-    { idempotencyKey: `squid:connect:${host}:v2` },
+    {
+      apiVersion: "2026-08-26.preview",
+      idempotencyKey: `squid:connect:${host}:managed-risk:v1`,
+    },
   );
   expect(mocks.durable).toHaveBeenCalledWith(
-    `squid:connect:${host}:v2`,
+    `squid:connect:${host}:managed-risk:v1`,
     { hostId: host, email: "host@example.invalid" },
     expect.any(Function),
     true,
@@ -141,14 +144,35 @@ it("creates an Accounts v2 Express recipient for destination charges with a fres
     expect.objectContaining({ account: "acct_new" }),
   );
 });
-it("allows a recipient account to publish after transfers and payouts activate", async () => {
+it("allows a direct-charge account to publish after payments and payouts activate", async () => {
   expect(await payoutStatus(host)).toEqual({ id: "acct_test", ready: true });
   mocks.retrieve.mockResolvedValueOnce({
-    charges_enabled: false,
+    charges_enabled: true,
     payouts_enabled: true,
-    capabilities: { transfers: "inactive" },
+    capabilities: { card_payments: "inactive" },
+    controller: {
+      fees: { payer: "account" },
+      losses: { payments: "stripe" },
+    },
   });
   expect(await payoutStatus(host)).toEqual({ id: "acct_test", ready: false });
+});
+it("replaces a legacy liability account when its host reconnects", async () => {
+  mocks.retrieve.mockResolvedValueOnce({
+    charges_enabled: false,
+    payouts_enabled: false,
+    capabilities: { transfers: "active" },
+    controller: {
+      fees: { payer: "application" },
+      losses: { payments: "application" },
+    },
+  });
+  expect((await POST(request({ propertyId: property }))).status).toBe(200);
+  expect(mocks.create).toHaveBeenCalledTimes(1);
+  expect(mocks.upsert).toHaveBeenCalledWith({
+    id: host,
+    stripe_account_id: "acct_new",
+  });
 });
 it("returns a useful error without exposing Stripe's response details", async () => {
   const logged = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -170,6 +194,24 @@ it("returns a useful error without exposing Stripe's response details", async ()
         requestId: "req_fixture",
       }),
     );
+  } finally {
+    logged.mockRestore();
+  }
+});
+it("explains when live Connect platform activation blocks onboarding", async () => {
+  mocks.accountId = undefined;
+  const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+  const stripeError = new mocks.StripeError("Activate the platform");
+  stripeError.code = "account_create_activation_required";
+  mocks.create.mockRejectedValueOnce(stripeError);
+  try {
+    const response = await POST(request({ propertyId: property }));
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      error:
+        "Squid’s Stripe platform must finish activation before payout setup. Your charger is saved; please contact Squid support.",
+    });
+    expect(mocks.upsert).not.toHaveBeenCalled();
   } finally {
     logged.mockRestore();
   }

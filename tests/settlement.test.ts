@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import type { ChargeSession } from "@/lib/types";
+import { processingFee } from "@/lib/money";
 const mock = vi.hoisted(() => ({
+  mode: "direct" as "direct" | "destination",
+  actualStripeFee: null as number | null,
   session: {} as ChargeSession,
   checkout: {
     id: "cs_test",
@@ -17,7 +20,7 @@ const mock = vi.hoisted(() => ({
     application_fee_amount: 0,
     capture_method: "manual",
     metadata: { squid_session_id: "session-one" },
-    transfer_data: { destination: "acct_host" },
+    transfer_data: null as { destination: string } | null,
   },
   external: {
     id: "ext_one",
@@ -46,6 +49,10 @@ const mock = vi.hoisted(() => ({
   },
   capture: vi.fn(),
   cancel: vi.fn(),
+  retrieveCheckout: vi.fn(),
+  createCheckout: vi.fn(),
+  retrievePayment: vi.fn(),
+  retrieveRefund: vi.fn(),
   operation: vi.fn(),
   write: vi.fn(),
   refund: vi.fn(),
@@ -91,25 +98,24 @@ vi.mock("@/lib/server/stripe", () => ({
   stripe: () => ({
     checkout: {
       sessions: {
-        retrieve: async () => ({ ...mock.checkout }),
+        create: mock.createCheckout,
+        retrieve: mock.retrieveCheckout,
         expire: mock.expire,
       },
     },
     paymentIntents: {
-      retrieve: async () => ({ ...mock.pi }),
+      retrieve: mock.retrievePayment,
       capture: mock.capture,
       cancel: mock.cancel,
     },
     refunds: {
       create: mock.refund,
-      retrieve: async () => ({
-        id: "re_test",
-        status: "succeeded",
-        amount: 243,
-      }),
+      retrieve: mock.retrieveRefund,
     },
   }),
   payoutStatus: async () => ({ id: "acct_host", ready: true }),
+  paymentOptions: async () =>
+    mock.mode === "direct" ? { stripeAccount: "acct_host" } : {},
 }));
 vi.mock("@/lib/server/ivora", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/server/ivora")>();
@@ -129,6 +135,8 @@ vi.mock("@/lib/server/ivora", async (importOriginal) => {
 import { reconcile } from "@/lib/server/sessions";
 beforeEach(() => {
   vi.clearAllMocks();
+  mock.mode = "direct";
+  mock.actualStripeFee = null;
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-09-23T11:00:00Z"));
   Object.assign(mock.checkout, {
@@ -169,7 +177,42 @@ beforeEach(() => {
     amount_received: 0,
     application_fee_amount: 0,
     metadata: { squid_session_id: "session-one" },
-    transfer_data: { destination: "acct_host" },
+    transfer_data: null,
+  });
+  mock.retrieveCheckout.mockImplementation(async () => ({ ...mock.checkout }));
+  mock.createCheckout.mockResolvedValue({
+    id: "cs_test",
+    url: "https://checkout.stripe.test/session",
+  });
+  mock.retrievePayment.mockImplementation(
+    async (_id: string, params?: { expand?: string[] }) => ({
+      ...mock.pi,
+      ...(params?.expand
+        ? {
+            latest_charge: {
+              balance_transaction: {
+                fee_details: [
+                  {
+                    type: "stripe_fee",
+                    amount:
+                      mock.actualStripeFee ??
+                      processingFee(mock.pi.amount_received),
+                  },
+                  {
+                    type: "application_fee",
+                    amount: mock.pi.application_fee_amount,
+                  },
+                ],
+              },
+            },
+          }
+        : {}),
+    }),
+  );
+  mock.retrieveRefund.mockResolvedValue({
+    id: "re_test",
+    status: "succeeded",
+    amount: 243,
   });
   Object.assign(mock.external, {
     status: "charging",
@@ -223,6 +266,39 @@ beforeEach(() => {
 });
 afterEach(() => vi.useRealTimers());
 describe("external-funded charging settlement", () => {
+  it("creates new Checkout sessions directly on the connected account", async () => {
+    mock.session.stripe_checkout_id = null;
+    mock.pi.status = "requires_payment_method";
+    await reconcile("session-one");
+    const [params, options] = mock.createCheckout.mock.calls[0];
+    expect(params.payment_intent_data).toMatchObject({
+      capture_method: "manual",
+      metadata: { squid_session_id: "session-one" },
+    });
+    expect(params.payment_intent_data).not.toHaveProperty("transfer_data");
+    expect(options).toEqual({
+      stripeAccount: "acct_host",
+      idempotencyKey: "session-one:checkout",
+    });
+    expect(mock.retrieveCheckout).toHaveBeenCalledWith(
+      "cs_test",
+      {},
+      {
+        stripeAccount: "acct_host",
+      },
+    );
+  });
+  it("creates an unfinished legacy Checkout session as a destination charge", async () => {
+    mock.mode = "destination";
+    mock.session.stripe_checkout_id = null;
+    mock.pi.status = "requires_payment_method";
+    await reconcile("session-one");
+    const [params, options] = mock.createCheckout.mock.calls[0];
+    expect(params.payment_intent_data.transfer_data).toEqual({
+      destination: "acct_host",
+    });
+    expect(options).toEqual({ idempotencyKey: "session-one:checkout" });
+  });
   it("expires an abandoned checkout before releasing the local reservation", async () => {
     Object.assign(mock.checkout, { status: "open", payment_intent: null });
     mock.session.ivora_session_id = null;
@@ -230,7 +306,7 @@ describe("external-funded charging settlement", () => {
     expect(mock.expire).toHaveBeenCalledWith(
       "cs_test",
       {},
-      { idempotencyKey: "session-one:expire" },
+      { stripeAccount: "acct_host", idempotencyKey: "session-one:expire" },
     );
     expect(mock.session.status).toBe("canceled");
     expect(mock.operation).not.toHaveBeenCalled();
@@ -253,8 +329,8 @@ describe("external-funded charging settlement", () => {
     expect(mock.write).not.toHaveBeenCalled();
     expect(mock.capture).not.toHaveBeenCalled();
   });
-  it("rejects a payment routed to another connected host", async () => {
-    mock.pi.transfer_data.destination = "acct_someone_else";
+  it("rejects a direct payment with unexpected transfer routing", async () => {
+    mock.pi.transfer_data = { destination: "acct_someone_else" };
     await reconcile("session-one");
     expect(mock.session.status).toBe("review");
     expect(mock.operation).not.toHaveBeenCalled();
@@ -276,14 +352,14 @@ describe("external-funded charging settlement", () => {
     expect(mock.session.status).toBe("stopping");
     expect(mock.capture).not.toHaveBeenCalled();
   });
-  it("captures the immutable final bill and takes both fees from that amount", async () => {
+  it("captures the immutable final bill with only Squid's fee", async () => {
     mock.external.usage.active = false;
     mock.external.usage.ended_at = "2026-09-23T11:00:00Z";
     await reconcile("session-one");
     expect(mock.capture).toHaveBeenCalledWith(
       "pi_test",
-      { amount_to_capture: 243, application_fee_amount: 52 },
-      { idempotencyKey: "session-one:capture" },
+      { amount_to_capture: 243, application_fee_amount: 15 },
+      { stripeAccount: "acct_host", idempotencyKey: "session-one:capture" },
     );
     expect(mock.session).toMatchObject({
       status: "completed",
@@ -295,12 +371,18 @@ describe("external-funded charging settlement", () => {
     await reconcile("session-one");
     expect(mock.capture).toHaveBeenCalledTimes(1);
   });
+  it("records Stripe's actual charge fee when it differs from the estimate", async () => {
+    mock.actualStripeFee = 44;
+    mock.external.usage.active = false;
+    await reconcile("session-one");
+    expect(mock.session.stripe_fee_cents).toBe(44);
+  });
   it("recovers a captured payment after a lost response without charging twice", async () => {
     mock.external.usage.active = false;
     Object.assign(mock.pi, {
       status: "succeeded",
       amount_received: 243,
-      application_fee_amount: 52,
+      application_fee_amount: 15,
     });
     await reconcile("session-one");
     expect(mock.session.status).toBe("completed");
@@ -373,7 +455,7 @@ describe("external-funded charging settlement", () => {
     Object.assign(mock.pi, {
       status: "succeeded",
       amount_received: 243,
-      application_fee_amount: 52,
+      application_fee_amount: 15,
     });
     await reconcile("session-one");
     expect(mock.session.status).toBe("completed");
@@ -406,7 +488,7 @@ describe("external-funded charging settlement", () => {
       expect(mock.cancel).toHaveBeenCalledWith(
         "pi_test",
         {},
-        { idempotencyKey: "id:session-one:cancel" },
+        { stripeAccount: "acct_host", idempotencyKey: "id:session-one:cancel" },
       );
       expect(mock.capture).not.toHaveBeenCalled();
       expect(mock.write).toHaveBeenCalledWith(
@@ -417,7 +499,7 @@ describe("external-funded charging settlement", () => {
       );
     },
   );
-  it("captures a bill exactly at the minimum and still takes both fees", async () => {
+  it("captures a bill exactly at the minimum with Squid's fee", async () => {
     Object.assign(mock.external, {
       status: "completed",
       usage: null,
@@ -438,8 +520,8 @@ describe("external-funded charging settlement", () => {
     });
     expect(mock.capture).toHaveBeenCalledWith(
       "pi_test",
-      { amount_to_capture: 50, application_fee_amount: 34 },
-      { idempotencyKey: "session-one:capture" },
+      { amount_to_capture: 50, application_fee_amount: 3 },
+      { stripeAccount: "acct_host", idempotencyKey: "session-one:capture" },
     );
     expect(mock.cancel).not.toHaveBeenCalled();
   });
@@ -558,11 +640,46 @@ describe("external-funded charging settlement", () => {
     expect(mock.session.status).toBe("review");
     expect(mock.cancel).not.toHaveBeenCalled();
   });
-  it("reverses both the host transfer and platform fee on a full refund", async () => {
+  it("refunds a direct charge and Squid's application fee", async () => {
     mock.session.status = "completed";
     mock.session.refund_requested = true;
     mock.session.total_cents = 243;
     mock.pi.status = "succeeded";
+    await reconcile("session-one");
+    expect(mock.refund).toHaveBeenCalledWith(
+      {
+        payment_intent: "pi_test",
+        refund_application_fee: true,
+      },
+      { stripeAccount: "acct_host", idempotencyKey: "session-one:refund" },
+    );
+    expect(mock.session).toMatchObject({
+      status: "refunded",
+      refund_requested: false,
+    });
+    await reconcile("session-one");
+    expect(mock.refund).toHaveBeenCalledTimes(1);
+  });
+  it("keeps an in-flight legacy destination charge on the platform", async () => {
+    mock.mode = "destination";
+    mock.pi.transfer_data = { destination: "acct_host" };
+    mock.external.usage.active = false;
+    await reconcile("session-one");
+    expect(mock.retrieveCheckout).toHaveBeenCalledWith("cs_test", {}, {});
+    expect(mock.retrievePayment).toHaveBeenCalledWith("pi_test", {}, {});
+    expect(mock.capture).toHaveBeenCalledWith(
+      "pi_test",
+      { amount_to_capture: 243, application_fee_amount: 52 },
+      { idempotencyKey: "session-one:capture" },
+    );
+  });
+  it("reverses a legacy destination transfer on refund", async () => {
+    mock.mode = "destination";
+    mock.pi.transfer_data = { destination: "acct_host" };
+    mock.pi.status = "succeeded";
+    mock.session.status = "completed";
+    mock.session.refund_requested = true;
+    mock.session.total_cents = 243;
     await reconcile("session-one");
     expect(mock.refund).toHaveBeenCalledWith(
       {
@@ -572,11 +689,5 @@ describe("external-funded charging settlement", () => {
       },
       { idempotencyKey: "session-one:refund" },
     );
-    expect(mock.session).toMatchObject({
-      status: "refunded",
-      refund_requested: false,
-    });
-    await reconcile("session-one");
-    expect(mock.refund).toHaveBeenCalledTimes(1);
   });
 });

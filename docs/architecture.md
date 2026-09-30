@@ -8,12 +8,12 @@ sequenceDiagram
     participant P as Stripe Connect
     participant I as Ivora
     G->>S: Scan QR and request checkout
-    S->>D: Save session, destination, price, request identity
-    S->>P: Create manual-capture Checkout
+    S->>D: Save session, connected account, price, request identity
+    S->>P: Create manual-capture Checkout on host account
     S-->>G: Private session cookie and Checkout link
     G->>P: Authorize hold
-    P->>S: Signed Checkout webhook
-    S->>P: Retrieve and validate PaymentIntent
+    P->>S: Signed connected-account Checkout webhook
+    S->>P: Retrieve and validate host PaymentIntent
     S->>I: Create external-funded session and start
     loop Guest polling or scheduled reconciliation
         S->>I: Retrieve matched physical usage
@@ -22,7 +22,7 @@ sequenceDiagram
     G->>S: Request stop
     S->>I: Stop the matched session
     S->>I: Confirm inactive usage and finalize bill
-    S->>P: Capture exact bill; application fee = 6% + Stripe processing
+    S->>P: Capture exact bill; application fee = Squid's 6%
     S->>I: Report verified settlement
     S->>D: Save completed receipt
 ```
@@ -49,9 +49,9 @@ Rate-limit rows contain HMAC digests of normalized email addresses and trusted s
 
 ## Money and state
 
-Amounts use integer US cents. Squid saves the host destination, rate, tariff, and hold before requesting Checkout. The server checks the PaymentIntent's session metadata, destination, currency, capture method, and authorization amount. A browser redirect has no authority to start charging.
+Amounts use integer US cents. Squid saves the connected account, rate, tariff, and hold before requesting Checkout on that account. The server checks the PaymentIntent's session metadata, account scope, currency, capture method, and authorization amount. A browser redirect has no authority to start charging. Existing destination-charge sessions remain scoped to the platform for settlement and refunds.
 
-External-funded Ivora sessions associate charging with Squid's verified external payment. No Ivora payment service or payment flow is created. A final capture requires inactive matched usage, a final bill for that same transaction, and a total within the authorization. The application fee, Squid's 6% plus Stripe's processing fee (2.9% + 30¢) passed through to the host, is calculated from this final total, not the hold.
+External-funded Ivora sessions associate charging with Squid's verified external payment. No Ivora payment service or payment flow is created. A final capture requires inactive matched usage, a final bill for that same transaction, and a total within the authorization. Squid's 6% application fee is calculated from this final total, not the hold. Stripe bills processing to the host and Squid reads the actual fee from the charge balance transaction.
 
 Ivora webhooks (`charging_session.status_changed`, `bill.finalized`) trigger reconciliation of the matching session after a signed, deduplicated acknowledgement; the cron remains the safety net. Inventory creates are synchronous and carry an `external_reference`, so provisioning adopts existing records after a lost response instead of matching by name.
 
@@ -63,7 +63,7 @@ The unique client request UUID prevents duplicate checkout creation. A partial u
 
 Before provider writes, `squid_operations` stores a stable key and a canonical hash of the request. A retry must use that key with the same payload. Provider results are saved for replay. When a Stripe response was never saved and the request is over 23 hours old, the app declines to replay it automatically because the processor's idempotency retention may have elapsed. Operators must inspect provider state first.
 
-Saved start and stop operations are observed instead of replaced. Unknown outcomes do not get a fresh idempotency key. Refunds reverse the destination transfer and application fee. If capture succeeds but persistence fails, retrieving the existing PaymentIntent allows recovery without a second capture. The same approach handles canceled zero-cost authorizations.
+Saved start and stop operations are observed instead of replaced. Unknown outcomes do not get a fresh idempotency key. Direct-charge refunds return Squid's application fee; legacy destination-charge refunds also reverse the host transfer. If capture succeeds but persistence fails, retrieving the existing PaymentIntent allows recovery without a second capture. The same approach handles canceled zero-cost authorizations.
 
 ## Scheduling
 

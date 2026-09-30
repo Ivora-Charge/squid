@@ -4,7 +4,7 @@
 
 Squid turns an OCPP charger at a vacation rental into a paid guest amenity. Hosts connect their charger, set a price, connect payouts, and print a QR sticker. Guests scan, authorize a card hold, charge, and pay for the energy delivered. The interface is dark, responsive, and designed for phones.
 
-This is an Apache-2.0 reference application for the Ivora API. One Squid operator manages all hosts through one Ivora tenant. Squid owns guest access and payments: Stripe Connect routes the final charging amount to the host minus a 6% Squid fee and Stripe’s processing fee (2.9% + 30¢), both collected as the Connect application fee. Ivora handles OCPP and metered billing through **external-funded charging sessions**, without using Ivora payment adapters.
+This is an Apache-2.0 reference application for the Ivora API. One Squid operator manages all hosts through one Ivora tenant. Squid owns guest access while Stripe Connect charges guests directly on each host's connected account. Squid takes a 6% application fee; Stripe bills card processing to the host account. Ivora handles OCPP and metered billing through **external-funded charging sessions**, without using Ivora payment adapters.
 
 ![The dark Squid host dashboard, showing charging earnings, usage, and property chargers](docs/squid-preview.png)
 
@@ -47,6 +47,7 @@ npm run dev
 | `OCPP_CREDENTIAL_KEY`                                           | Stable 32-byte encryption key as 64 hex characters; generate with `openssl rand -hex 32`.         |
 | `STRIPE_SECRET_KEY`                                             | Squid's Stripe platform secret key. Start with test mode.                                         |
 | `STRIPE_WEBHOOK_SECRET`                                         | Signing secret for Squid's Stripe webhook endpoint.                                               |
+| `STRIPE_CONNECT_WEBHOOK_SECRET`                                 | Signing secret for the connected-account webhook endpoint at the same URL.                        |
 | `CRON_SECRET`                                                   | A random secret protecting scheduled reconciliation.                                              |
 | `NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN`, `NEXT_PUBLIC_POSTHOG_HOST` | Optional PostHog project key and ingest host. Provisioned by the Vercel PostHog integration.      |
 | `NEXT_PUBLIC_GA_MEASUREMENT_ID`                                 | Optional Google Analytics 4 measurement ID.                                                       |
@@ -81,16 +82,18 @@ Provider contracts: [Supabase custom email links](https://supabase.com/docs/refe
 
 ### Stripe Connect
 
-Enable Connect in the platform account. Squid creates Accounts v2 Express recipient accounts for hosts and uses destination charges. Because this payment flow makes Squid responsible for connected-account losses, complete Stripe's [loss-liability acknowledgement and any verification in the Platform profile](https://dashboard.stripe.com/settings/connect/platform-profile) before enabling live onboarding. Hosts connect their charger first, then complete Stripe Express onboarding from its setup page once the charger is online. They can manage payouts later in Settings. Guest Checkout uses a $25 manual-capture authorization and a destination charge to that host's saved connected account.
+Enable Connect in the platform account. Squid creates Accounts v2 Express merchant accounts with Stripe collecting connected-account losses and payment fees. This Express and Managed Risk combination uses Stripe's `2026-08-26.preview` API version when creating accounts. Hosts connect their charger first, then complete Stripe-hosted onboarding from its setup page once the charger is online. They can manage payouts later in Settings. Guest Checkout uses a $25 manual-capture authorization directly on that host's connected account. Existing destination-charge sessions retain their original account scope until settled.
 
-Register `/api/stripe/webhook` for `checkout.session.completed` and `checkout.session.expired`. For local development:
+Live Connect account creation also requires Stripe to activate the platform for creating connected accounts. If Stripe returns `account_create_activation_required`, check the live [account onboarding](https://dashboard.stripe.com/account/onboarding) and [Connect platform setup](https://dashboard.stripe.com/settings/connect/platform-setup). If the platform account already has payments and payouts enabled and the error persists, give Stripe support the failing request ID; this activation cannot be completed through Squid's API key.
+
+Register two webhook endpoints at `/api/stripe/webhook` for `checkout.session.completed` and `checkout.session.expired`: one for **Your account** and one for **Connected accounts**. Store each endpoint's signing secret in its matching environment variable. Connected-account events include an `account` ID, which Squid checks against the saved session. For local development, listen for both scopes:
 
 ```sh
-stripe listen --forward-to localhost:3000/api/stripe/webhook
-# Put the emitted whsec_ value in STRIPE_WEBHOOK_SECRET.
+stripe listen --forward-to localhost:3000/api/stripe/webhook --forward-connect-to localhost:3000/api/stripe/webhook
+# Put the emitted webhook signing secrets in the matching STRIPE_*_WEBHOOK_SECRET variables.
 ```
 
-Squid verifies Stripe state on the server before starting a charger. After confirmed charging completion, it captures the immutable final Ivora bill and sets `application_fee_amount` to Squid's 6% plus Stripe's processing fee (2.9% + 30¢), each rounded to the nearest cent. Bills below Stripe's $0.50 USD minimum are waived: Squid releases the entire hold and records $0 collected, while preserving Ivora's metered bill. For a $10.00 charge, the application fee is $1.19: $0.60 for Squid and $0.59 covering Stripe's processing fee, so the host receives $8.81. Processing fees are passed through to hosts at Stripe's standard rate; Squid adds nothing on top. Full refunds reverse both the host transfer and application fee. See [Stripe destination charges](https://docs.stripe.com/connect/destination-charges) and [manual capture](https://docs.stripe.com/api/payment_intents/capture).
+Squid verifies Stripe state on the server before starting a charger. After confirmed charging completion, it captures the immutable final Ivora bill and sets `application_fee_amount` to Squid's 6%, rounded to the nearest cent. Stripe deducts its processing fee directly from the host's connected account; Squid records the actual fee from the charge balance transaction. Bills below Stripe's $0.50 USD minimum are waived: Squid releases the entire hold and records $0 collected, while preserving Ivora's metered bill. At standard US card pricing, a $10.00 charge yields $0.60 for Squid, a $0.59 processing fee, and $8.81 for the host. Full refunds also refund Squid's application fee; Stripe's original processing fee might not be returned. See [Stripe direct charges](https://docs.stripe.com/connect/direct-charges) and [manual capture](https://docs.stripe.com/api/payment_intents/capture).
 
 Unplugging ends the physical transaction; reconciliation finalizes its bill and completes payment automatically. Ivora's completed session response may omit live usage, so retries settle from its immutable final bill without regressing to a starting state. A concurrent reconciliation returns the latest saved session, including any queued stop request. Guest polling keeps confirmed readings during transient failures and displays a retry notice only after repeated failures.
 
@@ -121,7 +124,7 @@ Ivora pushes signed `charging_session.status_changed`, `bill.finalized`, and `op
 1. Import this repository with the Next.js preset and Node.js 22.x, matching the pinned runtime and CI.
 2. Set the environment variables above for the intended environment. Use separate Supabase, Stripe, and Ivora test resources for previews.
 3. Apply all Supabase migrations. Set `NEXT_PUBLIC_APP_URL` to the canonical HTTPS origin and add its Supabase callback and confirmation URLs. Configure the Resend sender if using custom email delivery.
-4. Register the Stripe webhook against that origin and set its signing secret.
+4. Register platform and connected-account Stripe webhooks against that origin and set both signing secrets.
 5. Set `CRON_SECRET`. The included `vercel.json` invokes `/api/cron/reconcile` every minute. Vercel supplies the bearer secret automatically.
 6. Verify the complete flow with Stripe test accounts and a designated test charger. Print stickers only after choosing a stable public domain.
 
@@ -135,7 +138,7 @@ The `preproduction` branch deploys to [www.squidcharge.dev](https://www.squidcha
 
 In this project's **Settings → Environments → Production**, Branch Tracking is set to `preproduction`. Vercel calls the domain-serving environment **Production**, even though Squid uses it for preproduction with Stripe test mode and Ivora's `.co` API. Put this site's credentials in that Vercel environment. This also enables the every-minute reconciliation cron; Vercel does not run cron jobs on Preview deployments. See [Vercel Git deployments](https://vercel.com/docs/git) and [Cron Jobs](https://vercel.com/docs/cron-jobs).
 
-Set `NEXT_PUBLIC_APP_URL=https://www.squidcharge.dev`. Register the Stripe test webhook at `https://www.squidcharge.dev/api/stripe/webhook`. In Supabase Auth URL Configuration, set the Site URL to that origin and allow:
+Set `NEXT_PUBLIC_APP_URL=https://www.squidcharge.dev`. Register both Stripe test webhook scopes at `https://www.squidcharge.dev/api/stripe/webhook`. In Supabase Auth URL Configuration, set the Site URL to that origin and allow:
 
 ```text
 https://www.squidcharge.dev/auth/callback
@@ -149,7 +152,7 @@ Keep any LAN callbacks needed for local development. Store secrets in Vercel and
 
 The `main` branch deploys to [www.squidcharge.io](https://www.squidcharge.io) through the Vercel project `squid`; the bare `squidcharge.io` redirects to `www.`. Release by merging `preproduction` into `main`. Pushes to other branches build Preview deployments of this project, so production secrets are set for the **Production** environment only.
 
-Production uses its own Supabase project, Stripe live mode, and Ivora's production API. Set `NEXT_PUBLIC_APP_URL=https://www.squidcharge.io` and `OCPP_URL_PREFIX=wss://ocpp.squidcharge.io/sp1` in the Production environment. Register the live Stripe webhook at `https://www.squidcharge.io/api/stripe/webhook`, register the Ivora webhook at `https://www.squidcharge.io/api/ivora/webhook`, and allow these Supabase Auth redirect URLs:
+Production uses its own Supabase project, Stripe live mode, and Ivora's production API. Set `NEXT_PUBLIC_APP_URL=https://www.squidcharge.io` and `OCPP_URL_PREFIX=wss://ocpp.squidcharge.io/sp1` in the Production environment. Register both live Stripe webhook scopes at `https://www.squidcharge.io/api/stripe/webhook`, register the Ivora webhook at `https://www.squidcharge.io/api/ivora/webhook`, and allow these Supabase Auth redirect URLs:
 
 ```text
 https://www.squidcharge.io/auth/callback
@@ -174,7 +177,7 @@ Tests cover payment and fee invariants, settlement retries, ownership and guest 
 
 ## Boundaries
 
-This implementation has a USD/US model, one connector per property, a $25 hold, whole-session refunds, and a fixed 6% fee plus Stripe's processing fee passed through to hosts. Charging requests a stop at 85% of the hold or after 24 hours. Delayed meter reports or charger connectivity can still cause overages. Squid never silently caps a larger final bill or assumes a dispatched stop means the charger stopped. Uncertain outcomes remain reserved for operator review; see [recovery and architecture](docs/architecture.md).
+This implementation has a USD/US model, one connector per property, a $25 hold, whole-session refunds, and a fixed 6% Squid fee. Stripe bills processing to the host. Charging requests a stop at 85% of the hold or after 24 hours. Delayed meter reports or charger connectivity can still cause overages. Squid never silently caps a larger final bill or assumes a dispatched stop means the charger stopped. Uncertain outcomes remain reserved for operator review; see [recovery and architecture](docs/architecture.md).
 
 The included policy pages identify the project as a demonstration. A live operator must provide their contact information and applicable policies, configure any required taxes, and validate their hardware and payment flows before accepting guests. The current code does not calculate tax, handle disputes, or provide an automated operator reconciliation console.
 

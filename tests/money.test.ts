@@ -17,7 +17,8 @@ describe("Connect fees: 6% for Squid, Stripe's 2.9% + 30¢ passed to the host", 
     "splits %i cents into %i Squid, %i Stripe, and %i host cents",
     (total, fee, processing, host) => {
       expect(splitPayment(total)).toEqual({ total, fee, processing, host });
-      expect(applicationFee(total)).toBe(fee + processing);
+      expect(applicationFee(total)).toBe(fee);
+      expect(applicationFee(total, false)).toBe(fee + processing);
     },
   );
   it("conserves every cent and never leaves the host negative", () => {
@@ -27,11 +28,12 @@ describe("Connect fees: 6% for Squid, Stripe's 2.9% + 30¢ passed to the host", 
       expect(result.host).toBeGreaterThanOrEqual(0);
     }
   });
-  it("captures the actual bill with both fees taken from that bill, not the hold", () => {
+  it("charges only Squid's fee to the host as a direct-charge application fee", () => {
     expect(captureAmount(243, 2500)).toEqual({
       amount_to_capture: 243,
-      application_fee_amount: 52,
+      application_fee_amount: 15,
     });
+    expect(captureAmount(243, 2500, false).application_fee_amount).toBe(52);
   });
   it.each([-1, 1.5, Infinity, NaN])("rejects invalid money %s", (amount) => {
     expect(() => platformFee(amount)).toThrow();

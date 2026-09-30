@@ -16,6 +16,11 @@ function connectFailure(stage: "account" | "link", error: unknown): never {
       status: error.statusCode ?? null,
       requestId: error.requestId ?? null,
     });
+    if (error.code === "account_create_activation_required")
+      throw new HttpError(
+        503,
+        "Squid’s Stripe platform must finish activation before payout setup. Your charger is saved; please contact Squid support.",
+      );
     throw new HttpError(
       503,
       "Stripe payout setup is unavailable. Your charger is saved; please contact Squid support.",
@@ -40,16 +45,29 @@ export async function hostAccount(hostId: string) {
     throw new Error("Database setup is incomplete. Apply the Squid migration.");
   return data?.stripe_account_id as string | undefined;
 }
+export function isDirectAccount(account: Stripe.Account) {
+  return (
+    account.controller?.losses?.payments === "stripe" &&
+    account.controller?.fees?.payer === "account" &&
+    account.capabilities?.card_payments !== undefined
+  );
+}
+export async function paymentOptions(accountId: string) {
+  const account = await stripe().accounts.retrieve(accountId);
+  return isDirectAccount(account) ? { stripeAccount: accountId } : {};
+}
 export async function payoutStatus(hostId: string) {
   const id = await hostAccount(hostId);
   if (!id || !process.env.STRIPE_SECRET_KEY) return { id, ready: false };
   const account = await stripe().accounts.retrieve(id);
-  // Destination charges run on Squid's account. The host needs to receive
-  // transfers and payouts, but doesn't need to create card charges directly.
+  // A legacy destination-charge recipient must re-onboard before new charging.
+  if (!isDirectAccount(account)) return { id: undefined, ready: false };
   return {
     id,
     ready:
-      account.capabilities?.transfers === "active" && account.payouts_enabled,
+      account.capabilities?.card_payments === "active" &&
+      account.charges_enabled &&
+      account.payouts_enabled,
   };
 }
 export async function onboarding(
@@ -59,10 +77,17 @@ export async function onboarding(
 ) {
   return withLock(`host:${hostId}`, async () => {
     let id = await hostAccount(hostId);
+    if (id) {
+      try {
+        if (!isDirectAccount(await stripe().accounts.retrieve(id)))
+          id = undefined;
+      } catch (error) {
+        connectFailure("account", error);
+      }
+    }
     if (!id) {
-      // The old v1 key can replay Stripe's cached 400 even after Connect is
-      // enabled. Keep a fresh key for the v2 account request.
-      const key = `squid:connect:${hostId}:v2`;
+      // A new key avoids cached failures from the old account configurations.
+      const key = `squid:connect:${hostId}:managed-risk:v1`;
       const account = await durable(
         key,
         { hostId, email },
@@ -74,16 +99,14 @@ export async function onboarding(
                 dashboard: "express",
                 identity: { country: "US" },
                 configuration: {
-                  recipient: {
-                    capabilities: {
-                      stripe_balance: { stripe_transfers: { requested: true } },
-                    },
+                  merchant: {
+                    capabilities: { card_payments: { requested: true } },
                   },
                 },
                 defaults: {
                   responsibilities: {
-                    fees_collector: "application",
-                    losses_collector: "application",
+                    fees_collector: "stripe",
+                    losses_collector: "stripe",
                   },
                   profile: {
                     product_description:
@@ -92,7 +115,7 @@ export async function onboarding(
                 },
                 metadata: { squid_host_id: hostId },
               },
-              { idempotencyKey: key },
+              { apiVersion: "2026-08-26.preview", idempotencyKey: key },
             );
             return { id: created.id };
           } catch (error) {

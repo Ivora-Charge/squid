@@ -35,11 +35,12 @@ export default function Terms() {
         <p>
           Squid’s fee is 6% of the final transaction amount, rounded to the
           nearest cent. Stripe’s card processing fee (currently 2.9% plus $0.30
-          per transaction) is also deducted from the host’s share and collected
-          together with Squid’s fee as the Connect application fee. The
-          remainder is transferred to the host’s connected Stripe account. Bank
-          payouts follow Stripe’s account requirements and payout schedule. A
-          full refund reverses the host transfer and the application fee.
+          per transaction for standard US cards) is charged directly to the
+          host’s connected Stripe account. The charging payment is made on that
+          account, and Squid receives its fee separately. Bank payouts follow
+          Stripe’s account requirements and payout schedule. A full refund also
+          returns Squid’s fee; Stripe’s original processing fee may not be
+          returned.
         </p>
         <h2>Address search</h2>
         <p>

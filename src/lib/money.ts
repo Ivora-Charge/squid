@@ -22,9 +22,10 @@ export function processingFee(cents: number) {
     STRIPE_FEE_FIXED_CENTS;
   return Math.min(cents - platformFee(cents), estimate);
 }
-// The whole Connect application fee: Squid's share plus Stripe's fee.
-export function applicationFee(cents: number) {
-  return platformFee(cents) + processingFee(cents);
+// Stripe bills the host directly for direct charges. Legacy destination
+// charges collected the processing fee through Squid's application fee.
+export function applicationFee(cents: number, direct = true) {
+  return platformFee(cents) + (direct ? 0 : processingFee(cents));
 }
 export function money(cents: number, digits = 2) {
   return new Intl.NumberFormat("en-US", {
@@ -39,13 +40,17 @@ export function splitPayment(cents: number) {
   const processing = processingFee(cents);
   return { total: cents, fee, processing, host: cents - fee - processing };
 }
-export function captureAmount(total: number, authorized: number) {
+export function captureAmount(
+  total: number,
+  authorized: number,
+  direct = true,
+) {
   if (!Number.isSafeInteger(total) || total < 0 || total > authorized)
     throw new Error(
       "The final bill exceeds the authorized amount and needs review.",
     );
   return {
     amount_to_capture: total,
-    application_fee_amount: applicationFee(total),
+    application_fee_amount: applicationFee(total, direct),
   };
 }

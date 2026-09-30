@@ -772,13 +772,13 @@ export function Dashboard({
                     <p>
                       For every $10.00 charging session, Squid keeps $0.60 and
                       Stripe’s card processing fee of $0.59 (2.9% + 30¢) is
-                      deducted, so $8.81 is routed to your connected Stripe
-                      account. Processing fees pass through at Stripe’s standard
-                      rate; Squid adds nothing on top.
+                      deducted from your connected Stripe account, leaving
+                      $8.81. Stripe bills its processing fee directly; Squid
+                      adds nothing on top.
                     </p>
                     <p>
-                      Transfers to your Stripe balance happen after the final
-                      charging payment is captured. Bank payout timing follows
+                      The charging payment lands in your Stripe balance after
+                      the final amount is captured. Bank payout timing follows
                       your Stripe account’s schedule.
                     </p>
                   </div>
@@ -971,8 +971,8 @@ export function Dashboard({
         >
           <p>
             Refund the full {money(refund.total_cents ?? 0)} for this session?
-            This also reverses the host transfer and the application fee,
-            including Stripe’s processing fee.
+            Squid’s application fee will also be refunded. Stripe may keep its
+            original processing fee.
           </p>
           <ErrorMessage message={error} />
           <div className="form-actions">

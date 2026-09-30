@@ -13,7 +13,7 @@ import {
 import { checked, db, withLock } from "./db";
 import { appUrl } from "./config";
 import { HttpError } from "./security";
-import { stripe, payoutStatus } from "./stripe";
+import { stripe, payoutStatus, paymentOptions } from "./stripe";
 import {
   billSchema,
   durable,
@@ -78,7 +78,11 @@ async function update(id: string, values: Partial<ChargeSession>) {
       .eq("id", id),
   );
 }
-async function ensureCheckout(s: ChargeSession, p: Property) {
+async function ensureCheckout(
+  s: ChargeSession,
+  p: Property,
+  options: Stripe.RequestOptions,
+) {
   if (s.stripe_checkout_id) return;
   const key = `${s.id}:checkout`;
   const input = {
@@ -99,7 +103,9 @@ async function ensureCheckout(s: ChargeSession, p: Property) {
           metadata: { squid_session_id: s.id },
           payment_intent_data: {
             capture_method: "manual",
-            transfer_data: { destination: s.stripe_account_id },
+            ...(!options.stripeAccount
+              ? { transfer_data: { destination: s.stripe_account_id } }
+              : {}),
             metadata: { squid_session_id: s.id },
           },
           line_items: [
@@ -118,7 +124,7 @@ async function ensureCheckout(s: ChargeSession, p: Property) {
           success_url: `${appUrl()}/session/${s.id}`,
           cancel_url: `${appUrl()}/session/${s.id}`,
         },
-        { idempotencyKey: key },
+        { ...options, idempotencyKey: key },
       );
       return { id: result.id, url: result.url };
     },
@@ -146,7 +152,11 @@ export async function createCheckout(slug: string, requestId: string) {
     if (prior) {
       if (prior.property_id !== p.id)
         throw new HttpError(409, "This request belongs to another charger.");
-      await ensureCheckout(prior as ChargeSession, p as Property);
+      await ensureCheckout(
+        prior as ChargeSession,
+        p as Property,
+        await paymentOptions(prior.stripe_account_id),
+      );
       return loadSession(prior.id);
     }
     if (!p.tariff_id)
@@ -189,7 +199,7 @@ export async function createCheckout(slug: string, requestId: string) {
         "A guest is already starting or using this charger. Please try again shortly.",
       );
     const s = checked(insertion) as ChargeSession;
-    await ensureCheckout(s, p as Property);
+    await ensureCheckout(s, p as Property, { stripeAccount: account.id });
     return loadSession(id);
   });
 }
@@ -213,7 +223,11 @@ async function report(
     },
   );
 }
-function intentMatches(pi: Stripe.PaymentIntent, s: ChargeSession) {
+function intentMatches(
+  pi: Stripe.PaymentIntent,
+  s: ChargeSession,
+  direct: boolean,
+) {
   const destination = pi.transfer_data?.destination;
   const destinationId =
     typeof destination === "string" ? destination : destination?.id;
@@ -221,9 +235,21 @@ function intentMatches(pi: Stripe.PaymentIntent, s: ChargeSession) {
     pi.metadata.squid_session_id === s.id &&
     pi.currency === "usd" &&
     pi.amount === s.hold_cents &&
-    destinationId === s.stripe_account_id &&
+    (direct ? !destinationId : destinationId === s.stripe_account_id) &&
     pi.capture_method === "manual"
   );
+}
+function directStripeFee(pi: Stripe.PaymentIntent) {
+  const charge = pi.latest_charge;
+  const balance =
+    charge && typeof charge !== "string" ? charge.balance_transaction : null;
+  if (!balance || typeof balance === "string")
+    throw new Error("Stripe fee details are not ready. Retry settlement.");
+  // A direct charge's balance transaction contains both Stripe's fees and
+  // Squid's application fee. Record only what Stripe billed the host.
+  return balance.fee_details
+    .filter((fee) => fee.type !== "application_fee")
+    .reduce((sum, fee) => sum + fee.amount, 0);
 }
 function hasCompletedBill(external: ExternalSession) {
   return (
@@ -244,10 +270,14 @@ export async function reconcile(id: string): Promise<ChargeSession> {
     )
       return s;
     const p = await property(s.property_id);
-    await ensureCheckout(s, p);
+    const options = await paymentOptions(s.stripe_account_id);
+    const direct = Boolean(options.stripeAccount);
+    await ensureCheckout(s, p, options);
     s = await loadSession(id);
     const checkout = await stripe().checkout.sessions.retrieve(
       s.stripe_checkout_id!,
+      {},
+      options,
     );
     // Use the provider's default expiry so delayed retries have identical valid
     // parameters. Reconciliation releases abandoned reservations after 30 minutes.
@@ -259,7 +289,7 @@ export async function reconcile(id: string): Promise<ChargeSession> {
       await stripe().checkout.sessions.expire(
         checkout.id,
         {},
-        { idempotencyKey: `${id}:expire` },
+        { ...options, idempotencyKey: `${id}:expire` },
       );
       await update(id, { status: "canceled", checkout_url: null });
       return loadSession(id);
@@ -273,8 +303,8 @@ export async function reconcile(id: string): Promise<ChargeSession> {
         await update(id, { status: "canceled", checkout_url: null });
       return loadSession(id);
     }
-    let pi = await stripe().paymentIntents.retrieve(paymentId);
-    if (!intentMatches(pi, s)) {
+    let pi = await stripe().paymentIntents.retrieve(paymentId, {}, options);
+    if (!intentMatches(pi, s, direct)) {
       await update(id, {
         status: "review",
         last_error: "Payment details do not match the saved session.",
@@ -292,14 +322,14 @@ export async function reconcile(id: string): Promise<ChargeSession> {
           stripe().refunds.create(
             {
               payment_intent: pi.id,
-              reverse_transfer: true,
+              ...(!direct ? { reverse_transfer: true } : {}),
               refund_application_fee: true,
             },
-            { idempotencyKey: key },
+            { ...options, idempotencyKey: key },
           ),
         true,
       );
-      const observed = await stripe().refunds.retrieve(refund.id);
+      const observed = await stripe().refunds.retrieve(refund.id, {}, options);
       if (observed.status === "succeeded") {
         await report(s, "refund", observed.amount, observed.id);
         await update(id, { status: "refunded", refund_requested: false });
@@ -366,7 +396,7 @@ export async function reconcile(id: string): Promise<ChargeSession> {
       await stripe().paymentIntents.cancel(
         pi.id,
         {},
-        { idempotencyKey: `id:${id}:cancel` },
+        { ...options, idempotencyKey: `id:${id}:cancel` },
       );
       await update(id, { status: "canceled", checkout_url: null });
       return loadSession(id);
@@ -408,7 +438,7 @@ export async function reconcile(id: string): Promise<ChargeSession> {
       await stripe().paymentIntents.cancel(
         pi.id,
         {},
-        { idempotencyKey: `id:${id}:cancel` },
+        { ...options, idempotencyKey: `id:${id}:cancel` },
       );
       await report(s, "release", 0, pi.id);
       await update(id, {
@@ -441,7 +471,7 @@ export async function reconcile(id: string): Promise<ChargeSession> {
         await stripe().paymentIntents.cancel(
           pi.id,
           {},
-          { idempotencyKey: `id:${id}:cancel` },
+          { ...options, idempotencyKey: `id:${id}:cancel` },
         );
         await report(s, "release", 0, pi.id);
         await update(id, { status: "canceled" });
@@ -555,28 +585,33 @@ export async function reconcile(id: string): Promise<ChargeSession> {
           await stripe().paymentIntents.cancel(
             pi.id,
             {},
-            { idempotencyKey: `id:${id}:cancel` },
+            { ...options, idempotencyKey: `id:${id}:cancel` },
           );
         await report(s, "release", 0, pi.id);
       } else {
         if (pi.status === "requires_capture") {
           const key = `${id}:capture`;
-          const input = captureAmount(total, pi.amount_capturable);
+          const input = captureAmount(total, pi.amount_capturable, direct);
           await durable(
             key,
             input,
             () =>
               stripe().paymentIntents.capture(pi.id, input, {
+                ...options,
                 idempotencyKey: key,
               }),
             true,
           );
         }
-        pi = await stripe().paymentIntents.retrieve(pi.id);
+        pi = await stripe().paymentIntents.retrieve(
+          pi.id,
+          direct ? { expand: ["latest_charge.balance_transaction"] } : {},
+          options,
+        );
         if (
           pi.status !== "succeeded" ||
           pi.amount_received !== total ||
-          pi.application_fee_amount !== applicationFee(total)
+          pi.application_fee_amount !== applicationFee(total, direct)
         ) {
           await update(id, { status: "review" });
           return loadSession(id);
@@ -587,7 +622,12 @@ export async function reconcile(id: string): Promise<ChargeSession> {
         status: "completed",
         total_cents: charged,
         fee_cents: platformFee(charged),
-        stripe_fee_cents: processingFee(charged),
+        stripe_fee_cents:
+          charged === 0
+            ? 0
+            : direct
+              ? directStripeFee(pi)
+              : processingFee(charged),
         energy_kwh: Number(bill.energy_kwh ?? 0),
         checkout_url: null,
         last_error: null,
