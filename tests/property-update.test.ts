@@ -116,9 +116,21 @@ async function update(body: unknown) {
 it("saves charger details without touching the tariff when the price is unchanged", async () => {
   const result = await update({ action: "update", ...fields });
   expect(result.status).toBe(200);
-  expect(result.body.property).toMatchObject({ ...fields, tariff_id: 3 });
+  expect(result.body.property).toMatchObject({
+    ...fields,
+    tariff_id: 3,
+    ocpp_url: "wss://ocpp.example/weekender-abc123",
+  });
   expect(mocks.updates).toHaveBeenCalledWith(fields);
   expect(mocks.create).not.toHaveBeenCalled();
+});
+it("shows the production OCPP hostname for an existing station", async () => {
+  vi.stubEnv("OCPP_URL_PREFIX", "wss://ocpp.squidcharge.io/sp1");
+  const result = await update({ action: "pause" });
+  expect(result.status).toBe(200);
+  expect(result.body.property.ocpp_url).toBe(
+    "wss://ocpp.squidcharge.io/sp1/weekender-abc123",
+  );
 });
 it("clears the tariff and creates a new one synchronously when the price changes", async () => {
   const result = await update({ action: "update", ...fields, rate_cents: 42 });

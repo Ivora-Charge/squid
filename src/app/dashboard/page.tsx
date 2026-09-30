@@ -7,6 +7,7 @@ import { supabaseConfigured } from "@/lib/server/config";
 import { payoutStatus } from "@/lib/server/stripe";
 import { getStation } from "@/lib/server/ivora";
 import { chargerStatus, type ChargerStatus } from "@/lib/status";
+import { withConnectionUrl } from "@/lib/server/properties";
 import type { HostSession, Property } from "@/lib/types";
 export const dynamic = "force-dynamic";
 export default async function DashboardPage() {
@@ -65,7 +66,7 @@ export default async function DashboardPage() {
   return (
     <Dashboard
       initial={{
-        properties: properties.data as Property[],
+        properties: (properties.data as Property[]).map(withConnectionUrl),
         sessions: sessions.data as HostSession[],
         email: host.email ?? "Host",
         payoutsReady: account.ready,

@@ -41,6 +41,7 @@ npm run dev
 | `RESEND_FROM_EMAIL`                                             | Sender on your verified domain, such as `Squid by Ivora <hello@squidcharge.io>`.                  |
 | `IVORA_API_URL`                                                 | Ivora API origin. The supplied `.co` endpoint is preproduction.                                   |
 | `IVORA_API_KEY`, `IVORA_TENANT_ID`                              | Server-only credentials for Squid's shared fleet account.                                         |
+| `OCPP_URL_PREFIX`                                               | Optional secure OCPP URL prefix shown to hosts. Squid appends the station identity.               |
 | `IVORA_WEBHOOK_SECRET`                                          | Signing secret printed once by `npm run ivora:webhook -- register <url>`. Enables Ivora webhooks. |
 | `GOOGLE_MAPS_ADDRESS_API_KEY`                                   | Server-only Google key with Places API (New) and Time Zone API enabled.                           |
 | `OCPP_CREDENTIAL_KEY`                                           | Stable 32-byte encryption key as 64 hex characters; generate with `openssl rand -hex 32`.         |
@@ -95,7 +96,7 @@ Unplugging ends the physical transaction; reconciliation finalizes its bill and 
 
 ### Ivora and OCPP
 
-The API key needs the tenant inventory, station provisioning, tariff, operation, and external-funded charging-session permissions. Squid registers each location, station, and tariff with an `external_reference` derived from the property, so a retry after a lost response adopts the existing record instead of matching names. Each registered station returns its OCPP connection URL; a custom OCPP domain, if configured in Ivora, publishes its own. Registering the webhook additionally needs `webhooks:write`.
+The API key needs the tenant inventory, station provisioning, tariff, operation, and external-funded charging-session permissions. Squid registers each location, station, and tariff with an `external_reference` derived from the property, so a retry after a lost response adopts the existing record instead of matching names. Each registered station returns its OCPP connection URL. Set `OCPP_URL_PREFIX` when the same Ivora endpoint is also available at a custom hostname; Squid appends the registered station identity and shows that URL in charger setup. Registering the webhook additionally needs `webhooks:write`.
 
 Hosts add a property, enter the station identity, OCPP URL, and password in their charger's configuration, then refresh setup. The station must be online and Stripe onboarding complete before its guest page can be published. One property currently represents one AC connector, up to 22 kW. Rate and authorization amounts are snapshotted for each session.
 
@@ -148,7 +149,7 @@ Keep any LAN callbacks needed for local development. Store secrets in Vercel and
 
 The `main` branch deploys to [www.squidcharge.io](https://www.squidcharge.io) through the Vercel project `squid`; the bare `squidcharge.io` redirects to `www.`. Release by merging `preproduction` into `main`. Pushes to other branches build Preview deployments of this project, so production secrets are set for the **Production** environment only.
 
-Production uses its own Supabase project, Stripe live mode, and Ivora's production API. Set `NEXT_PUBLIC_APP_URL=https://www.squidcharge.io`, register the live Stripe webhook at `https://www.squidcharge.io/api/stripe/webhook`, register the Ivora webhook at `https://www.squidcharge.io/api/ivora/webhook`, and allow these Supabase Auth redirect URLs:
+Production uses its own Supabase project, Stripe live mode, and Ivora's production API. Set `NEXT_PUBLIC_APP_URL=https://www.squidcharge.io` and `OCPP_URL_PREFIX=wss://ocpp.squidcharge.io/sp1` in the Production environment. Register the live Stripe webhook at `https://www.squidcharge.io/api/stripe/webhook`, register the Ivora webhook at `https://www.squidcharge.io/api/ivora/webhook`, and allow these Supabase Auth redirect URLs:
 
 ```text
 https://www.squidcharge.io/auth/callback

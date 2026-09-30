@@ -12,6 +12,7 @@ import { payoutStatus } from "./stripe";
 import { HttpError } from "./security";
 import type { Property } from "../types";
 import { configureCredentials } from "./charger-credentials";
+import { stationConnectionUrl } from "./config";
 export const propertyInput = z.object({
   id: z.uuid(),
   name: z.string().trim().min(2).max(80),
@@ -26,6 +27,13 @@ export const propertyUpdate = propertyInput.omit({
   id: true,
   addressToken: true,
 });
+export function withConnectionUrl(p: Property): Property {
+  if (!p.station_id) return p;
+  return {
+    ...p,
+    ocpp_url: stationConnectionUrl(p.station_name, p.ocpp_url),
+  };
+}
 export async function updateProperty(
   hostId: string,
   id: string,
@@ -56,7 +64,7 @@ export async function ownedProperty(
     .eq("host_id", hostId)
     .maybeSingle();
   if (error || !data) throw new HttpError(404, "Charger not found.");
-  return data as Property;
+  return withConnectionUrl(data as Property);
 }
 export async function provision(hostId: string, id: string): Promise<Property> {
   return withLock(`property:${id}`, async () => {
@@ -109,7 +117,10 @@ export async function provision(hostId: string, id: string): Promise<Property> {
       await save({
         station_id: station.id,
         connector_id: station.connectors[0]?.id ?? null,
-        ocpp_url: station.connection_url ?? null,
+        ocpp_url: stationConnectionUrl(
+          p.station_name,
+          station.connection_url ?? null,
+        ),
       });
     }
     if (!p.tariff_id) {
@@ -131,7 +142,10 @@ export async function provision(hostId: string, id: string): Promise<Property> {
       const station = await getStation(p.station_id!);
       await save({
         connector_id: station.connectors[0]?.id ?? p.connector_id,
-        ocpp_url: station.connection_url ?? p.ocpp_url,
+        ocpp_url: stationConnectionUrl(
+          p.station_name,
+          station.connection_url ?? p.ocpp_url,
+        ),
       });
     }
     return p;
