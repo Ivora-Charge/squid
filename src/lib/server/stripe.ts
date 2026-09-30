@@ -3,6 +3,27 @@ import Stripe from "stripe";
 import { appUrl, required } from "./config";
 import { checked, db, withLock } from "./db";
 import { durable } from "./ivora";
+import { HttpError } from "./security";
+
+function connectFailure(stage: "account" | "link", error: unknown): never {
+  if (error instanceof Stripe.errors.StripeError) {
+    // Stripe request metadata is enough to investigate without logging account
+    // details, the API key, or the error's potentially sensitive message.
+    console.error("[Squid Stripe Connect]", {
+      stage,
+      type: error.type,
+      code: error.code ?? null,
+      status: error.statusCode ?? null,
+      requestId: error.requestId ?? null,
+    });
+    throw new HttpError(
+      503,
+      "Stripe payout setup is unavailable. Your charger is saved; please contact Squid support.",
+    );
+  }
+  throw error;
+}
+
 export function stripe() {
   return new Stripe(required("STRIPE_SECRET_KEY"), {
     maxNetworkRetries: 2,
@@ -38,24 +59,28 @@ export async function onboarding(
         key,
         { hostId, email },
         async () => {
-          const created = await stripe().accounts.create(
-            {
-              type: "express",
-              country: "US",
-              email,
-              capabilities: {
-                card_payments: { requested: true },
-                transfers: { requested: true },
+          try {
+            const created = await stripe().accounts.create(
+              {
+                type: "express",
+                country: "US",
+                email,
+                capabilities: {
+                  card_payments: { requested: true },
+                  transfers: { requested: true },
+                },
+                business_profile: {
+                  product_description:
+                    "Electric vehicle charging at vacation rentals",
+                },
+                metadata: { squid_host_id: hostId },
               },
-              business_profile: {
-                product_description:
-                  "Electric vehicle charging at vacation rentals",
-              },
-              metadata: { squid_host_id: hostId },
-            },
-            { idempotencyKey: key },
-          );
-          return { id: created.id };
+              { idempotencyKey: key },
+            );
+            return { id: created.id };
+          } catch (error) {
+            connectFailure("account", error);
+          }
         },
         true,
       );
@@ -67,12 +92,16 @@ export async function onboarding(
       );
     }
     const returnUrl = `${appUrl()}/dashboard?${propertyId ? `setup=${encodeURIComponent(propertyId)}` : "tab=settings"}`;
-    const link = await stripe().accountLinks.create({
-      account: id,
-      type: "account_onboarding",
-      refresh_url: returnUrl,
-      return_url: returnUrl,
-    });
-    return link.url;
+    try {
+      const link = await stripe().accountLinks.create({
+        account: id,
+        type: "account_onboarding",
+        refresh_url: returnUrl,
+        return_url: returnUrl,
+      });
+      return link.url;
+    } catch (error) {
+      connectFailure("link", error);
+    }
   });
 }

@@ -142,6 +142,9 @@ export function Dashboard({
   // Demo chargers added in the browser have no live status; treat them as online.
   const statusOf = (p: Property): ChargerStatus =>
     data.status[p.id] ?? (demo ? "online" : "unknown");
+  const canStartStripe =
+    data.stripeConnected ||
+    data.properties.some((p) => statusOf(p) === "online");
   const offlineCount = data.properties.filter(
     (p) => statusOf(p) === "offline",
   ).length;
@@ -185,8 +188,6 @@ export function Dashboard({
   }
   function added(p: Property) {
     saveProperty(p);
-    if (demo)
-      setData((d) => ({ ...d, payoutsReady: true, stripeConnected: true }));
     setAdd(false);
     openCharger(p);
   }
@@ -195,6 +196,13 @@ export function Dashboard({
     window.location.assign("/");
   }
   async function connect() {
+    if (!canStartStripe) {
+      const property =
+        data.properties.find((p) => !p.published) ?? data.properties[0];
+      if (property) openCharger(property);
+      else setAdd(true);
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -202,7 +210,10 @@ export function Dashboard({
         switchTab("settings");
         setHelp(true);
       } else {
-        const { url } = await post<{ url: string }>("/api/host/connect", {});
+        const property = data.properties.find((p) => statusOf(p) === "online");
+        const { url } = await post<{ url: string }>("/api/host/connect", {
+          ...(property ? { propertyId: property.id } : {}),
+        });
         window.location.assign(url);
       }
     } catch (e) {
@@ -438,6 +449,13 @@ export function Dashboard({
               onSticker={() => setSticker(selected)}
               onUpdate={updateProperty}
               onRefund={setRefund}
+              onDemoPayoutsReady={() =>
+                setData((d) => ({
+                  ...d,
+                  payoutsReady: true,
+                  stripeConnected: true,
+                }))
+              }
             />
           ) : (
             <>
@@ -771,6 +789,8 @@ export function Dashboard({
                   >
                     {busy ? (
                       <Busy />
+                    ) : !canStartStripe ? (
+                      "Connect charger first"
                     ) : data.stripeConnected ? (
                       "Manage payout setup"
                     ) : (
@@ -831,6 +851,8 @@ export function Dashboard({
                     >
                       {busy ? (
                         <Busy />
+                      ) : !canStartStripe ? (
+                        "Connect charger first"
                       ) : data.stripeConnected ? (
                         "Manage Stripe connection"
                       ) : (
@@ -902,14 +924,7 @@ export function Dashboard({
         </button>
       </nav>
       {add && (
-        <AddCharger
-          demo={demo}
-          payoutsReady={data.payoutsReady}
-          stripeConnected={data.stripeConnected}
-          onClose={() => setAdd(false)}
-          onAdd={added}
-          onSave={saveProperty}
-        />
+        <AddCharger demo={demo} onClose={() => setAdd(false)} onAdd={added} />
       )}{" "}
       {sticker && (
         <QRSticker
@@ -1084,6 +1099,7 @@ function ChargerView({
   onSticker,
   onUpdate,
   onRefund,
+  onDemoPayoutsReady,
 }: {
   property: Property;
   sessions: HostSession[];
@@ -1095,6 +1111,7 @@ function ChargerView({
   onSticker: () => void;
   onUpdate: (p: Property) => void;
   onRefund: (s: HostSession) => void;
+  onDemoPayoutsReady: () => void;
 }) {
   const paid = sessions.filter((s) => s.status === "completed");
   const gross = paid.reduce((sum, s) => sum + (s.total_cents ?? 0), 0);
@@ -1227,7 +1244,9 @@ function ChargerView({
             demo={demo}
             payoutsReady={payoutsReady}
             stripeConnected={stripeConnected}
+            status={status}
             onUpdate={onUpdate}
+            onDemoPayoutsReady={onDemoPayoutsReady}
             collapsed={ready}
           />
         </section>
@@ -1611,14 +1630,18 @@ function ChargerSetup({
   demo,
   payoutsReady,
   stripeConnected,
+  status,
   onUpdate,
+  onDemoPayoutsReady,
   collapsed,
 }: {
   property: Property;
   demo: boolean;
   payoutsReady: boolean;
   stripeConnected: boolean;
+  status: ChargerStatus;
   onUpdate: (p: Property) => void;
+  onDemoPayoutsReady: () => void;
   collapsed: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -1656,6 +1679,7 @@ function ChargerSetup({
     setError("");
     try {
       if (demo) {
+        onDemoPayoutsReady();
         setDone("Demo payout setup. No Stripe account is created.");
         return;
       }
@@ -1724,26 +1748,6 @@ function ChargerSetup({
             Copy these details into your charger’s OCPP settings, then publish
             its guest page.
           </p>
-        )}
-        {!payoutsReady && (
-          <div className="onboarding-payouts">
-            <CreditCard size={20} />
-            <div>
-              <strong>Finish setting up your payouts</strong>
-              <p>
-                Your charger is saved. Stripe needs a few details before you can
-                accept guest payments.
-              </p>
-              <button
-                className="button secondary"
-                disabled={busy}
-                onClick={connectPayouts}
-              >
-                {stripeConnected ? "Continue Stripe setup" : "Connect Stripe"}
-                <ArrowUpRight size={16} />
-              </button>
-            </div>
-          </div>
         )}
         <label>
           OCPP station identity
@@ -1825,6 +1829,33 @@ function ChargerSetup({
           The preset uses 16 easy-to-read characters. Enter it exactly as shown.
           If your charger asks for a username, use the station identity.
         </p>
+        {!payoutsReady && (
+          <div className="onboarding-payouts">
+            <CreditCard size={20} />
+            <div>
+              <strong>
+                {status === "online" || stripeConnected
+                  ? "Next, set up your payouts"
+                  : "Connect your charger first"}
+              </strong>
+              <p>
+                {status === "online" || stripeConnected
+                  ? "Your charger is ready for Stripe setup. Finish payout onboarding before accepting guest payments."
+                  : "Enter the connection details above in your charger’s app. Once it appears online, you can connect Stripe."}
+              </p>
+              {(status === "online" || stripeConnected) && (
+                <button
+                  className="button secondary"
+                  disabled={busy}
+                  onClick={connectPayouts}
+                >
+                  {stripeConnected ? "Continue Stripe setup" : "Connect Stripe"}
+                  <ArrowUpRight size={16} />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
         <ErrorMessage message={error} />
         {done && (
           <div className="success-message" role="status">
