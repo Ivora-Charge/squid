@@ -38,8 +38,8 @@ export default function Privacy() {
           Squid saves your selected property address and location for charger
           setup. Google handles these requests under its{" "}
           <a href="https://policies.google.com/privacy">Privacy Policy</a>.
-          Charger connection passwords are stored encrypted and shown only to
-          the owning host.
+          Charger connection passwords are stored encrypted and shown to the
+          owning host or an authorized administrator helping with setup.
         </p>
         <h2>For guests</h2>
         <p>
@@ -56,6 +56,17 @@ export default function Privacy() {
           sign-in, Resend for account emails, Stripe for payments, and Ivora for
           charger control and metering. Ivora receives non-secret payment
           references, not your card details or Stripe credentials.
+        </p>
+        <h2>Feedback and support</h2>
+        <p>
+          When you send feedback, Squid stores your message, feedback category,
+          optional experience rating, and the page you were using. Email is
+          optional and is used if you want us to follow up. Signed-in feedback
+          can be associated with your account and workspace. Feedback does not
+          include sign-in tokens, URL query strings, or card information.
+          Authorized administrators can review feedback and temporarily work in
+          a host’s workspace to help with charger setup and support. This access
+          and the actions they request are recorded in an activity log.
         </p>
         <h2>Analytics</h2>
         <p>

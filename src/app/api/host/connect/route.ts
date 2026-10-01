@@ -6,7 +6,7 @@ import { ownedProperty } from "@/lib/server/properties";
 export async function POST(request: NextRequest) {
   try {
     sameOrigin(request);
-    const host = await requireHost();
+    const host = await requireHost(request);
     const { propertyId } = z
       .object({ propertyId: z.uuid().optional() })
       .parse(await request.json());

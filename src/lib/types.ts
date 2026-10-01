@@ -1,4 +1,5 @@
 import type { ChargerStatus, GuestAvailability } from "./status";
+import type { ActingAs } from "./admin-types";
 export type CityPhoto = {
   url: string;
   sourceUrl: string;
@@ -103,6 +104,8 @@ export type DashboardData = {
   payoutsReady: boolean;
   stripeConnected: boolean;
   status: Record<string, ChargerStatus>;
+  isAdmin?: boolean;
+  actingAs?: ActingAs | null;
 };
 export type PublicProperty = Pick<
   Property,

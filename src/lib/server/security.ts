@@ -4,20 +4,15 @@ import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import { appUrl, required, supabaseConfigured } from "./config";
 import { user } from "./db";
-export class HttpError extends Error {
-  constructor(
-    public status: number,
-    message: string,
-  ) {
-    super(message);
-  }
-}
-export async function requireHost() {
+import { authorizeWorkspace } from "./admin";
+import { HttpError } from "./http-error";
+export { HttpError } from "./http-error";
+export async function requireHost(request?: NextRequest) {
   if (!supabaseConfigured())
     throw new HttpError(401, "Please sign in to continue.");
   const host = await user();
   if (!host) throw new HttpError(401, "Please sign in to continue.");
-  return host;
+  return (await authorizeWorkspace(host, request)).host;
 }
 export function sameOrigin(request: NextRequest) {
   const expected = new URL(appUrl()).origin;

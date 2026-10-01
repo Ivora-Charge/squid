@@ -1,7 +1,9 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useId, useRef } from "react";
-import { X, ArrowUpRight, LoaderCircle } from "lucide-react";
+import { X, ArrowUpRight, LoaderCircle, MessageSquare } from "lucide-react";
+let openModals = 0;
+let originalOverflow = "";
 export function SquidMark({ className = "" }: { className?: string }) {
   return (
     <svg
@@ -40,22 +42,29 @@ export function Modal({
   onClose,
   children,
   wide = false,
+  feedback = true,
 }: {
   title: string;
   onClose: () => void;
   children: React.ReactNode;
   wide?: boolean;
+  feedback?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   useEffect(() => {
     const d = ref.current;
+    const previousFocus = document.activeElement;
     d?.showModal();
-    const old = document.body.style.overflow;
+    if (openModals === 0) originalOverflow = document.body.style.overflow;
+    openModals++;
     document.body.style.overflow = "hidden";
     return () => {
       d?.close();
-      document.body.style.overflow = old;
+      openModals--;
+      if (openModals === 0) document.body.style.overflow = originalOverflow;
+      if (previousFocus instanceof HTMLElement && previousFocus.isConnected)
+        previousFocus.focus({ preventScroll: true });
     };
   }, []);
   return (
@@ -79,6 +88,15 @@ export function Modal({
         </button>
       </div>
       {children}
+      {feedback && (
+        <button
+          type="button"
+          className="text-link modal-feedback"
+          onClick={() => window.dispatchEvent(new Event("squid:feedback"))}
+        >
+          <MessageSquare size={14} /> Help Squid grow
+        </button>
+      )}
     </dialog>
   );
 }
@@ -119,11 +137,26 @@ export function Footer() {
 export async function post<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(path, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(path.startsWith("/api/host/") || path === "/api/feedback"
+        ? hostRequestHeaders()
+        : {}),
+    },
     body: JSON.stringify(body),
   });
   const data = await response.json();
   if (!response.ok)
     throw new Error(data.error || "Something went wrong. Try again.");
   return data;
+}
+export function hostRequestHeaders(): Record<string, string> {
+  return {
+    "x-squid-tenant-access":
+      typeof document === "undefined"
+        ? "self"
+        : (document
+            .querySelector("[data-tenant-access]")
+            ?.getAttribute("data-tenant-access") ?? "self"),
+  };
 }

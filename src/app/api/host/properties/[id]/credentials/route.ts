@@ -3,11 +3,11 @@ import { requireHost, failure } from "@/lib/server/security";
 import { ownedProperty } from "@/lib/server/properties";
 import { chargerCredentials } from "@/lib/server/charger-credentials";
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   context: { params: Promise<{ id: string }> },
 ) {
   try {
-    const host = await requireHost();
+    const host = await requireHost(request);
     const { id } = await context.params;
     await ownedProperty(host.id, id);
     return NextResponse.json(await chargerCredentials(id), {

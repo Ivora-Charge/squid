@@ -9,6 +9,7 @@ import {
   propertyCityPhoto,
 } from "@/lib/server/city-photos";
 import { failure, HttpError } from "@/lib/server/security";
+import { hostContext } from "@/lib/server/admin";
 
 export const maxDuration = 30;
 export async function GET(
@@ -38,10 +39,12 @@ export async function GET(
           .eq("id", id)
           .maybeSingle(),
       );
-      if (
-        !property ||
-        (!property.published && (await user())?.id !== property.host_id)
-      )
+      let viewerId: string | undefined;
+      if (property && !property.published) {
+        const actor = await user();
+        if (actor) viewerId = (await hostContext(actor)).host.id;
+      }
+      if (!property || (!property.published && viewerId !== property.host_id))
         throw new HttpError(404, "Charger not found.");
       photo = await propertyCityPhoto(property);
     }

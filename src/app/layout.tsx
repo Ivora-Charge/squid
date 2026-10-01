@@ -1,7 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import { DM_Sans, Space_Grotesk } from "next/font/google";
 import { appUrl } from "@/lib/server/config";
+import { FeedbackButton } from "@/components/feedback-button";
 import "./globals.css";
+import "./admin-feedback.css";
 const sans = DM_Sans({ subsets: ["latin"], variable: "--font-sans" });
 const display = Space_Grotesk({
   subsets: ["latin"],
@@ -40,6 +42,7 @@ export default function RootLayout({
           Skip to content
         </a>
         {children}
+        <FeedbackButton />
       </body>
     </html>
   );

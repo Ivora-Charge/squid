@@ -13,6 +13,7 @@ import {
   reservePasswordSignIn,
   reservePasswordUpdate,
 } from "@/lib/server/auth-limits";
+import { hostContext } from "@/lib/server/admin";
 
 export async function POST(request: NextRequest) {
   try {
@@ -62,6 +63,11 @@ export async function PATCH(request: NextRequest) {
       throw new HttpError(
         401,
         "Open your password reset link or sign in before setting a password.",
+      );
+    if ((await hostContext(data.user)).actingAs)
+      throw new HttpError(
+        409,
+        "Return to your own account before changing your password.",
       );
     await reservePasswordUpdate(data.user.id);
     const { error } = await client.auth.updateUser({ password });

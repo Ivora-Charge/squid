@@ -7,7 +7,7 @@ import {
   type AddressSelection,
   type AddressSuggestion,
 } from "@/lib/onboarding";
-import { ErrorMessage } from "./ui";
+import { ErrorMessage, hostRequestHeaders } from "./ui";
 
 export function AddressSearch({
   demo,
@@ -42,7 +42,10 @@ export function AddressSearch({
         } else {
           const response = await fetch("/api/host/address", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              ...hostRequestHeaders(),
+            },
             body: JSON.stringify({ action: "suggest", query, session }),
             signal: controller.signal,
           });
@@ -78,7 +81,10 @@ export function AddressSearch({
       else {
         const response = await fetch("/api/host/address", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            ...hostRequestHeaders(),
+          },
           body: JSON.stringify({
             action: "select",
             placeId: suggestion.id,
