@@ -74,6 +74,7 @@ export async function onboarding(
   hostId: string,
   email: string,
   propertyId?: string,
+  origin = appUrl(),
 ) {
   return withLock(`host:${hostId}`, async () => {
     let id = await hostAccount(hostId);
@@ -139,7 +140,7 @@ export async function onboarding(
           .upsert({ id: hostId, stripe_account_id: id }),
       );
     }
-    const returnUrl = `${appUrl()}/dashboard?${propertyId ? `setup=${encodeURIComponent(propertyId)}` : "tab=settings"}`;
+    const returnUrl = `${origin}/dashboard?${propertyId ? `setup=${encodeURIComponent(propertyId)}` : "tab=settings"}`;
     try {
       const link = await stripe().accountLinks.create({
         account: id,

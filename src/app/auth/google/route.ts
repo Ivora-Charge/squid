@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
     ).auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${appUrl()}/auth/callback`,
+        redirectTo: `${appUrl(request)}/auth/callback`,
         queryParams: { prompt: "select_account" },
         skipBrowserRedirect: true,
       },
