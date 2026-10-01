@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { DM_Sans, Space_Grotesk } from "next/font/google";
+import { appUrl } from "@/lib/server/config";
 import "./globals.css";
 const sans = DM_Sans({ subsets: ["latin"], variable: "--font-sans" });
 const display = Space_Grotesk({
@@ -7,6 +8,7 @@ const display = Space_Grotesk({
   variable: "--font-display",
 });
 export const metadata: Metadata = {
+  metadataBase: new URL(appUrl()),
   title: {
     default: "Squid by Ivora · A little charge. A better stay.",
     template: "%s · Squid by Ivora",
@@ -14,6 +16,12 @@ export const metadata: Metadata = {
   description:
     "Turn your vacation rental’s EV charger into a thoughtful amenity. Guests scan, pay, and plug in. Open-source charging, powered by Ivora.",
   icons: { icon: "/icon.svg" },
+  openGraph: {
+    type: "website",
+    siteName: "Squid by Ivora",
+    title: "Start monetizing your EV charger today",
+  },
+  twitter: { card: "summary_large_image" },
 };
 export const viewport: Viewport = {
   width: "device-width",
