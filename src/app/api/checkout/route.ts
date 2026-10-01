@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { failure, issueGuestCookie, sameOrigin } from "@/lib/server/security";
+import { appUrl } from "@/lib/server/config";
 import { createCheckout } from "@/lib/server/sessions";
 export const maxDuration = 60;
 export async function POST(request: NextRequest) {
@@ -12,8 +13,8 @@ export async function POST(request: NextRequest) {
         requestId: z.uuid(),
       })
       .parse(await request.json());
-    const session = await createCheckout(slug, requestId);
-    await issueGuestCookie(session.id);
+    const session = await createCheckout(slug, requestId, appUrl(request));
+    await issueGuestCookie(session.id, request);
     return NextResponse.json({ id: session.id, url: session.checkout_url });
   } catch (error) {
     return failure(error);

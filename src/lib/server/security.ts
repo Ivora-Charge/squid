@@ -20,7 +20,7 @@ export async function requireHost() {
   return host;
 }
 export function sameOrigin(request: NextRequest) {
-  const expected = new URL(appUrl()).origin;
+  const expected = new URL(appUrl(request)).origin;
   if (request.headers.get("origin") !== expected)
     throw new HttpError(403, "This request must come from Squid.");
 }
@@ -29,10 +29,10 @@ export function guestToken(id: string) {
     .update(`squid-guest:${id}`)
     .digest("hex");
 }
-export async function issueGuestCookie(id: string) {
+export async function issueGuestCookie(id: string, request?: NextRequest) {
   (await cookies()).set(`squid_guest_${id}`, guestToken(id), {
     httpOnly: true,
-    secure: appUrl().startsWith("https:"),
+    secure: appUrl(request).startsWith("https:"),
     sameSite: "lax",
     path: "/",
     maxAge: 60 * 60 * 24 * 7,

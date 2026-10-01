@@ -34,6 +34,7 @@ npm run dev
 | Variable                                                        | Purpose                                                                                           |
 | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | `NEXT_PUBLIC_APP_URL`                                           | Canonical application origin, including your local port. Use HTTPS in production.                 |
+| `PREVIEW_HOST_SUFFIX`                                           | Optional, Vercel Preview only. Host suffix of preview aliases, such as `.squidcharge.dev`.        |
 | `SUPABASE_URL`, `SUPABASE_ANON_KEY`                             | Supabase project and public auth key.                                                             |
 | `SUPABASE_SERVICE_ROLE_KEY`                                     | Server-only administrative key. An anon key cannot replace it.                                    |
 | `SUPABASE_DB_URL`                                               | Only needed to run the migration command. Use the direct or session pooler connection string.     |
@@ -147,6 +148,18 @@ https://www.squidcharge.dev/login/confirm
 ```
 
 Keep any LAN callbacks needed for local development. Store secrets in Vercel and the ignored local `.env`; `SUPABASE_DB_URL` is only needed locally for migrations. Production runs as a separate Vercel project with its own credentials; see below.
+
+### Preview deployments
+
+Pull requests also build Vercel Preview deployments, served at their `*.vercel.app` URLs and at stable aliases such as `https://pr-12.squidcharge.dev`. When `VERCEL_ENV` is `preview`, Squid derives its origin from the request host so that sign-in callbacks, email links, form origin checks, secure cookies, Stripe Connect return/refresh URLs, and Checkout success/cancel URLs stay on that preview. Only these hosts are trusted: hosts ending in `PREVIEW_HOST_SUFFIX` and the deployment's own `VERCEL_URL` or `VERCEL_BRANCH_URL`. Any other `Host` or `X-Forwarded-Host` value falls back to `NEXT_PUBLIC_APP_URL`, as do production and local development. Set the suffix with its leading dot to a domain that only your Vercel project serves, for example `PREVIEW_HOST_SUFFIX=.squidcharge.dev` in the **Preview** environment.
+
+In the Supabase project used by previews, add this wildcard to the Auth redirect URLs:
+
+```text
+https://*.squidcharge.dev/**
+```
+
+Stripe webhooks are registered only for the main origin, so previews do not receive them. Vercel also does not run cron jobs on Preview deployments. A preview's guest Checkout completes through the existing reconciliation, which runs while the guest's session page polls; previews are for test-mode checks only.
 
 ### Squid production
 
