@@ -3116,7 +3116,11 @@ input[type="range"] {
     padding: 0 23px;
   }
   .landing-nav {
-    height: 90px;
+    height: auto;
+    min-height: 90px;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    padding: 16px 0;
   }
   .brand > span {
     font-size: 30px;
@@ -3126,7 +3130,13 @@ input[type="range"] {
     height: 36px;
   }
   .nav-links {
-    display: none;
+    display: flex;
+    order: 1;
+    flex-basis: 100%;
+    gap: 24px;
+  }
+  .nav-links > a {
+    min-height: 44px;
   }
   .landing-nav > .button {
     font-size: 10px;

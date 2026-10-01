@@ -18,6 +18,9 @@ export default function Home() {
         <Brand />
         <div className="nav-links">
           <a href="#how-it-works">How it works</a>
+          <Link href="/developers#compatible-chargers">
+            Compatible chargers
+          </Link>
         </div>
         <Link className="button subtle" href="/login">
           Host sign in <ArrowRight size={16} />
