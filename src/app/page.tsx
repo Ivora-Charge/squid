@@ -46,8 +46,11 @@ export default function Home() {
               <Link href="/login" className="button primary">
                 Put your charger to work <ArrowUpRight size={19} />
               </Link>
-              <Link className="text-link" href="/demo">
-                Take a look around <ArrowRight size={17} />
+              <Link
+                href="/developers#compatible-chargers"
+                className="button secondary hero-compatibility"
+              >
+                <Plug size={18} /> Compatible chargers <ArrowRight size={17} />
               </Link>
             </div>
             <div className="hero-notes">
@@ -58,6 +61,9 @@ export default function Home() {
                 <Check size={15} /> Just a 6% Squid fee
               </span>
             </div>
+            <Link className="text-link hero-demo" href="/demo">
+              Take a look around <ArrowRight size={17} />
+            </Link>
           </div>
           <div className="hero-visual">
             <img

@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { MapPin } from "lucide-react";
+import { Info, MapPin } from "lucide-react";
 import type { CityPhoto as Photo, Property } from "@/lib/types";
 
 const cache = new Map<string, Photo>();
@@ -111,22 +111,48 @@ export function CityPhoto({
         </div>
       )}
       {photo && !failed && (
-        <span
+        <details
           className="city-photo-credit"
           onClick={(event) => event.stopPropagation()}
+          onPointerEnter={(event) => {
+            if (event.pointerType === "mouse") event.currentTarget.open = true;
+          }}
+          onPointerLeave={(event) => {
+            if (
+              event.pointerType === "mouse" &&
+              !event.currentTarget.contains(document.activeElement)
+            ) {
+              event.currentTarget.open = false;
+            }
+          }}
+          onBlur={(event) => {
+            if (
+              !event.currentTarget.contains(event.relatedTarget) &&
+              !event.currentTarget.matches(":hover")
+            ) {
+              event.currentTarget.open = false;
+            }
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.stopPropagation();
+              event.currentTarget.open = false;
+              event.currentTarget.querySelector("summary")?.focus();
+            }
+          }}
         >
-          <a
-            href={photo.sourceUrl}
-            target="_blank"
-            rel="noreferrer"
-            title={`Photo by ${photo.author}`}
-          >
-            Photo: {photo.author}
-          </a>
-          <a href={photo.licenseUrl} target="_blank" rel="noreferrer">
-            {photo.license}
-          </a>
-        </span>
+          <summary>
+            <Info size={12} aria-hidden="true" /> Photo credits
+          </summary>
+          <div className="city-photo-credit-links">
+            <a href={photo.sourceUrl} target="_blank" rel="noreferrer">
+              Photo by {photo.author}
+            </a>
+            <a href={photo.licenseUrl} target="_blank" rel="noreferrer">
+              License: {photo.license}
+            </a>
+          </div>
+        </details>
       )}
     </>
   );
