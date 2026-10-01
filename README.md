@@ -111,6 +111,10 @@ Hosts save their charger and receive its OCPP connection details before starting
 
 The app connects chargers to Ivora's OCPP service. Vercel runs the web application and server routes; it does not host persistent OCPP WebSockets. API schema: [Ivora OpenAPI](https://api.ivoracharge.co/openapi.json).
 
+### City photos
+
+Charger cards and guest pages automatically select a photograph from the Wikipedia article for the charger's city and state. Images come from Wikimedia Commons, with photographer credits and a license link. Squid saves each charger's random selection in `squid_operations` so it remains consistent across visits and deployments. City lookups are cached for a day. The demo keeps its choice in browser storage. If no suitable photograph is available or the image fails to load, a location placeholder appears while charging remains available.
+
 ### Analytics
 
 When their variables are set, `src/instrumentation-client.ts` starts PostHog and Google Analytics 4 in the browser. Neither loads when its variable is empty, so local development and forks send nothing by default. PostHog captures pageviews, clicks, and session replays with every form input masked; the OCPP password field is also excluded with `ph-no-capture`. PostHog traffic goes through Squid's own origin at `/ingest` (rewritten in `next.config.ts`) so ad blockers do not drop it. Sign-in and password-reset pages carry one-use tokens in the URL fragment, so neither tool starts on those pages, and fragments are stripped from every URL PostHog records. Stripe Checkout runs on Stripe's domain and is not captured.

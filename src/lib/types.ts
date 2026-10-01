@@ -1,4 +1,11 @@
 import type { ChargerStatus, GuestAvailability } from "./status";
+export type CityPhoto = {
+  url: string;
+  sourceUrl: string;
+  author: string;
+  license: string;
+  licenseUrl: string;
+};
 export type Property = {
   id: string;
   host_id: string;

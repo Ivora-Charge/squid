@@ -36,6 +36,7 @@ import {
 import { Brand, Busy, ErrorMessage, Modal, post, SquidMark } from "./ui";
 import { AddCharger } from "./add-charger";
 import { QRSticker } from "./qr-sticker";
+import { CityPhoto } from "./city-photo";
 import { money } from "@/lib/money";
 import type { DashboardData, HostSession, Property } from "@/lib/types";
 import type { ChargerStatus } from "@/lib/status";
@@ -628,17 +629,14 @@ export function Dashboard({
                     )}
                   </div>
                   <div className="charger-grid">
-                    {properties.map((p, i) => (
+                    {properties.map((p) => (
                       <article
                         className="charger-card"
                         key={p.id}
                         onClick={() => openCharger(p)}
                       >
-                        <div className={`charger-picture picture-${i % 3}`}>
-                          <img
-                            src="/images/cabin.jpg"
-                            alt="Vacation home among trees"
-                          />
+                        <div className="charger-picture">
+                          <CityPhoto property={p} demo={demo} />
                           <div className="picture-overlay" />
                           <div className="picture-badges">
                             <span
