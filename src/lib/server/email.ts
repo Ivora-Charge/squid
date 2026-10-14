@@ -8,10 +8,11 @@ type EmailPurpose = "signin" | "signup" | "recovery";
 export function signInLink(
   tokenHash: string,
   purpose: EmailPurpose = "signin",
+  origin = appUrl(),
 ) {
   const link = new URL(
     purpose === "recovery" ? "/login/reset" : "/login/confirm",
-    appUrl(),
+    origin,
   );
   // Fragments stay in the browser instead of appearing in server request logs.
   link.hash = new URLSearchParams({ token_hash: tokenHash }).toString();
@@ -61,6 +62,7 @@ export async function sendSignInEmail(
   email: string,
   tokenHash: string,
   purpose: EmailPurpose = "signin",
+  origin = appUrl(),
 ) {
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
@@ -72,7 +74,7 @@ export async function sendSignInEmail(
     body: JSON.stringify({
       from: required("RESEND_FROM_EMAIL"),
       to: [email],
-      ...signInEmail(signInLink(tokenHash, purpose), purpose),
+      ...signInEmail(signInLink(tokenHash, purpose, origin), purpose),
     }),
     cache: "no-store",
     redirect: "error",
