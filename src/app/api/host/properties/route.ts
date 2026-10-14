@@ -9,7 +9,7 @@ export const maxDuration = 60;
 export async function POST(request: NextRequest) {
   try {
     sameOrigin(request);
-    const host = await requireHost();
+    const host = await requireHost(request);
     const input = propertyInput.parse(await request.json());
     const { data: existing, error } = await db()
       .from("squid_properties")

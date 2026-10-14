@@ -19,6 +19,7 @@ import { Brand, Busy, ErrorMessage, post } from "./ui";
 import { money } from "@/lib/money";
 import type { PublicProperty } from "@/lib/types";
 import type { GuestAvailability } from "@/lib/status";
+import { CityPhoto } from "./city-photo";
 export function GuestCharge({
   property: p,
   demo = false,
@@ -67,7 +68,7 @@ export function GuestCharge({
       </header>
       <main id="main" className="guest-main">
         <div className="guest-photo">
-          <img src="/images/cabin.jpg" alt="A peaceful vacation home" />
+          <CityPhoto property={p} demo={demo} />
           <div className="photo-shade" />
           <div className="guest-photo-copy">
             <span className="eyebrow">YOU’VE ARRIVED. UNWIND.</span>

@@ -12,7 +12,7 @@ export const maxDuration = 60;
 export async function POST(request: NextRequest) {
   try {
     sameOrigin(request);
-    const host = await requireHost();
+    const host = await requireHost(request);
     const { id } = z.object({ id: z.uuid() }).parse(await request.json());
     const session = await loadSession(id);
     if (session.host_id !== host.id)

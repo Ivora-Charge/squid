@@ -32,10 +32,21 @@ import {
   Code2,
   X,
   House,
+  ShieldCheck,
 } from "lucide-react";
-import { Brand, Busy, ErrorMessage, Modal, post, SquidMark } from "./ui";
+import {
+  Brand,
+  Busy,
+  ErrorMessage,
+  Modal,
+  post,
+  SquidMark,
+  hostRequestHeaders,
+} from "./ui";
+import { TenantAccessBanner } from "./tenant-access-banner";
 import { AddCharger } from "./add-charger";
 import { QRSticker } from "./qr-sticker";
+import { CityPhoto } from "./city-photo";
 import { money } from "@/lib/money";
 import type { DashboardData, HostSession, Property } from "@/lib/types";
 import type { ChargerStatus } from "@/lib/status";
@@ -192,6 +203,11 @@ export function Dashboard({
     openCharger(p);
   }
   async function signOut() {
+    if (data.actingAs) {
+      await post("/api/admin/tenant-access", { action: "end" });
+      window.location.assign("/admin");
+      return;
+    }
     if (!demo) await post("/auth/logout", {});
     window.location.assign("/");
   }
@@ -297,7 +313,7 @@ export function Dashboard({
     settings: "Make yourself at home.",
   }[tab];
   return (
-    <div className="dashboard">
+    <div className="dashboard" data-tenant-access={data.actingAs?.id ?? "self"}>
       <aside className="sidebar">
         <Brand />
         <div className="workspace-pill">
@@ -325,6 +341,13 @@ export function Dashboard({
           ))}
         </nav>
         <div className="sidebar-bottom">
+          {data.isAdmin && (
+            <a href="/admin" className="side-link">
+              <ShieldCheck size={18} />
+              <span>Admin dashboard</span>
+              <ArrowUpRight size={14} />
+            </a>
+          )}
           <div className="sidebar-note">
             <SquidMark />
             <strong>
@@ -348,7 +371,13 @@ export function Dashboard({
           </button>
           <button className="side-link" onClick={signOut}>
             <LogOut size={18} />
-            <span>{demo ? "Leave demo" : "Sign out"}</span>
+            <span>
+              {demo
+                ? "Leave demo"
+                : data.actingAs
+                  ? "Return to admin"
+                  : "Sign out"}
+            </span>
           </button>
           <button className="profile" onClick={() => switchTab("settings")}>
             <span className="avatar">
@@ -363,6 +392,7 @@ export function Dashboard({
         </div>
       </aside>
       <div className="dashboard-main">
+        {data.actingAs && <TenantAccessBanner access={data.actingAs} />}
         <header className="dashboard-topbar">
           <div className="breadcrumb">
             Your workspace <span>/</span>
@@ -389,6 +419,16 @@ export function Dashboard({
             </strong>
           </div>
           <div className="topbar-right">
+            {data.isAdmin && (
+              <a
+                href="/admin"
+                className="icon-button"
+                aria-label="Admin dashboard"
+                title="Admin dashboard"
+              >
+                <ShieldCheck size={19} />
+              </a>
+            )}
             <span className="workspace-status">
               <span className="status-dot" />
               {demo ? "Demo workspace" : "Host workspace"}
@@ -402,8 +442,20 @@ export function Dashboard({
             </button>
             <button
               className="icon-button"
-              aria-label={demo ? "Leave demo" : "Sign out"}
-              title={demo ? "Leave demo" : "Sign out"}
+              aria-label={
+                demo
+                  ? "Leave demo"
+                  : data.actingAs
+                    ? "Return to admin"
+                    : "Sign out"
+              }
+              title={
+                demo
+                  ? "Leave demo"
+                  : data.actingAs
+                    ? "Return to admin"
+                    : "Sign out"
+              }
               onClick={signOut}
             >
               <LogOut size={19} />
@@ -628,17 +680,14 @@ export function Dashboard({
                     )}
                   </div>
                   <div className="charger-grid">
-                    {properties.map((p, i) => (
+                    {properties.map((p) => (
                       <article
                         className="charger-card"
                         key={p.id}
                         onClick={() => openCharger(p)}
                       >
-                        <div className={`charger-picture picture-${i % 3}`}>
-                          <img
-                            src="/images/cabin.jpg"
-                            alt="Vacation home among trees"
-                          />
+                        <div className="charger-picture">
+                          <CityPhoto property={p} demo={demo} />
                           <div className="picture-overlay" />
                           <div className="picture-badges">
                             <span
@@ -817,14 +866,18 @@ export function Dashboard({
                       Your sign-in email keeps your properties and sessions
                       private.
                     </p>
-                    {!demo && (
+                    {!demo && !data.actingAs && (
                       <Link href="/login/reset" className="text-link">
                         Set or change your password <ArrowUpRight size={15} />
                       </Link>
                     )}
                     <button className="button secondary" onClick={signOut}>
                       <LogOut size={16} />
-                      {demo ? "Leave demo" : "Sign out"}
+                      {demo
+                        ? "Leave demo"
+                        : data.actingAs
+                          ? "Return to admin"
+                          : "Sign out"}
                     </button>
                   </section>
                   <section className="panel settings-card">
@@ -1658,6 +1711,7 @@ function ChargerSetup({
       return;
     }
     const response = await fetch(`/api/host/properties/${p.id}/credentials`, {
+      headers: hostRequestHeaders(),
       cache: "no-store",
       signal,
     });

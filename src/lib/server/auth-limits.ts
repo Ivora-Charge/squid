@@ -76,3 +76,15 @@ export async function reserveAddressSearch(userId: string) {
     "Please wait a few minutes before searching again.",
   );
 }
+export async function reserveFeedback(request: NextRequest, userId?: string) {
+  const message =
+    "Thanks for sharing your thoughts. Please wait a few minutes before sending more feedback.";
+  await takeQuota(
+    `feedback-source:${digest(source(request))}`,
+    10,
+    600,
+    message,
+  );
+  if (userId)
+    await takeQuota(`feedback-account:${digest(userId)}`, 5, 600, message);
+}

@@ -9,11 +9,19 @@ import { getStation } from "@/lib/server/ivora";
 import { chargerStatus, type ChargerStatus } from "@/lib/status";
 import { withConnectionUrl } from "@/lib/server/properties";
 import type { HostSession, Property } from "@/lib/types";
+import { hostContext, isAdmin } from "@/lib/server/admin";
+import { HttpError } from "@/lib/server/security";
 export const dynamic = "force-dynamic";
 export default async function DashboardPage() {
   if (!supabaseConfigured()) redirect("/login");
-  const host = await user();
-  if (!host) redirect("/login");
+  const actor = await user();
+  if (!actor) redirect("/login");
+  const context = await hostContext(actor).catch((error) => {
+    if (error instanceof HttpError && error.status === 409) return null;
+    throw error;
+  });
+  if (!context) redirect("/admin?access=ended");
+  const { host, actingAs } = context;
   const [properties, sessions] = await Promise.all([
     db()
       .from("squid_properties")
@@ -72,6 +80,8 @@ export default async function DashboardPage() {
         payoutsReady: account.ready,
         stripeConnected: Boolean(account.id),
         status,
+        isAdmin: isAdmin(actor),
+        actingAs,
       }}
     />
   );

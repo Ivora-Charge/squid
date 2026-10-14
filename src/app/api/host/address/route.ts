@@ -6,7 +6,7 @@ import { selectAddress, suggestAddresses } from "@/lib/server/addresses";
 export async function POST(request: NextRequest) {
   try {
     sameOrigin(request);
-    const host = await requireHost();
+    const host = await requireHost(request);
     const input = z
       .discriminatedUnion("action", [
         z.object({

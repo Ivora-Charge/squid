@@ -20,7 +20,7 @@ export async function POST(
 ) {
   try {
     sameOrigin(request);
-    const host = await requireHost();
+    const host = await requireHost(request);
     const { id } = await context.params;
     const input = z
       .discriminatedUnion("action", [

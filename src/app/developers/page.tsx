@@ -53,7 +53,7 @@ export default function Developers() {
           restart, double-check the three values for typos; that’s the cause
           nine times out of ten.
         </p>
-        <h2>Will my charger work?</h2>
+        <h2 id="compatible-chargers">Will my charger work?</h2>
         <p>
           These brands and models work with Squid. Search for yours — each one
           links to a short guide showing where its connection settings live.

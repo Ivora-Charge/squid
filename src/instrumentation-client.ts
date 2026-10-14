@@ -14,6 +14,7 @@ const gaId = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID;
 // Those pages leave with a full page load, so analytics simply starts on the
 // next page instead of ever seeing the token.
 const carriesToken =
+  /^\/admin\b/.test(window.location.pathname) ||
   /^\/login\/(confirm|reset)\b/.test(window.location.pathname) ||
   /token/i.test(window.location.hash);
 

@@ -47,7 +47,7 @@ npm run dev
 | `GOOGLE_MAPS_ADDRESS_API_KEY`                                   | Server-only Google key with Places API (New) and Time Zone API enabled.                           |
 | `OCPP_CREDENTIAL_KEY`                                           | Stable 32-byte encryption key as 64 hex characters; generate with `openssl rand -hex 32`.         |
 | `STRIPE_SECRET_KEY`                                             | Squid's Stripe platform secret key. Start with test mode.                                         |
-| `STRIPE_WEBHOOK_SECRET`                                         | Signing secret for Squid's Stripe webhook endpoint.                                               |
+| `STRIPE_WEBHOOK_SECRET`                                         | Signing secret for Squid's Stripe webhook endpoint. When unset, the webhook returns 503.          |
 | `STRIPE_CONNECT_WEBHOOK_SECRET`                                 | Signing secret for the connected-account webhook endpoint at the same URL.                        |
 | `CRON_SECRET`                                                   | A random secret protecting scheduled reconciliation.                                              |
 | `NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN`, `NEXT_PUBLIC_POSTHOG_HOST` | Optional PostHog project key and ingest host. Provisioned by the Vercel PostHog integration.      |
@@ -111,6 +111,20 @@ New station identities use a shortened property name and a unique suffix, such a
 Hosts save their charger and receive its OCPP connection details before starting Stripe payout onboarding. Once the charger appears online, its setup page offers Stripe Connect; retries reuse the saved charger, and both Stripe return and refresh URLs reopen that charger's setup. Squid checks the actual account status before publishing. Preview the first-host flow at `/demo?onboarding=1`.
 
 The app connects chargers to Ivora's OCPP service. Vercel runs the web application and server routes; it does not host persistent OCPP WebSockets. API schema: [Ivora OpenAPI](https://api.ivoracharge.co/openapi.json).
+
+### City photos
+
+Charger cards and guest pages automatically select a photograph from the Wikipedia article for the charger's city and state. Images come from Wikimedia Commons, with photographer credits and a license link. Squid saves each charger's random selection in `squid_operations` so it remains consistent across visits and deployments. City lookups are cached for a day. The demo keeps its choice in browser storage. If no suitable photograph is available or the image fails to load, a location placeholder appears while charging remains available.
+
+### Feedback and admin
+
+The **Feedback** button is available throughout Squid, including inside dialogs. The “Help Squid grow” survey accepts a message, category, optional experience rating, and optional email. Feedback is saved in `squid_feedback`; page context excludes query strings, URL fragments, and private session identifiers. Submissions are validated, throttled, and protected against cross-origin requests. Retrying a submission with the same ID does not duplicate or overwrite it.
+
+The verified account `mingcan@ivoracharge.com` can open `/admin` to search host workspaces, review feedback, change its status, and review admin activity. Admin authorization uses the authenticated, confirmed email returned by Supabase, never client-provided roles or profile metadata. Ordinary hosts and guests cannot read admin data or call admin actions.
+
+**Act as tenant** opens a host dashboard for up to one hour. Squid retains the administrator’s real login, stores a random access token in an HTTP-only cookie, and checks its hash, actor, expiry, and revocation on the server. A banner identifies the tenant and offers **Return to admin**. Host requests also carry the page’s access ID, so forms in another tab cannot act in a different workspace after a tenant switch. Tenant requests are recorded before they execute; the log does not imply that each requested action succeeded. Password changes remain tied to the real signed-in account and are blocked during tenant access. Signing out revokes tenant access. Admin pages do not initialize analytics.
+
+Apply `202610010001_feedback_admin.sql` before deploying this feature. Feedback, tenant access, and the append-only audit log are service-only tables with RLS; browser roles cannot read or write them or execute the admin database functions.
 
 ### Analytics
 
