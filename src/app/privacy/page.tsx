@@ -68,6 +68,17 @@ export default function Privacy() {
           a host’s workspace to help with charger setup and support. This access
           and the actions they request are recorded in an activity log.
         </p>
+        <h2>Host newsletter</h2>
+        <p>
+          The weekly host newsletter is off unless you turn it on in Settings.
+          Squid keeps a dated record of each time you turn it on or off and the
+          wording you agreed to. To send it, Resend receives your email address
+          and the newsletter content. Squid records whether each newsletter was
+          delivered, bounced, or led you to unsubscribe, and counts clicks on
+          its links. Squid does not track whether you open it. Every newsletter
+          has a one-click unsubscribe link; unsubscribed and bounced addresses
+          are kept on a suppression list so they are not emailed again.
+        </p>
         <h2>Analytics</h2>
         <p>
           When the operator enables them, PostHog and Google Analytics measure

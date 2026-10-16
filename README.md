@@ -50,6 +50,11 @@ npm run dev
 | `STRIPE_WEBHOOK_SECRET`                                         | Signing secret for Squid's Stripe webhook endpoint. When unset, the webhook returns 503.          |
 | `STRIPE_CONNECT_WEBHOOK_SECRET`                                 | Signing secret for the connected-account webhook endpoint at the same URL.                        |
 | `CRON_SECRET`                                                   | A random secret protecting scheduled reconciliation.                                              |
+| `NEWSLETTER_SENDING_ENABLED`                                    | Host newsletter sending. Off unless set to `true`; enable only after DKIM and DMARC are in place. |
+| `NEWSLETTER_FROM_EMAIL`                                         | Optional newsletter sender on your verified domain. Defaults to `RESEND_FROM_EMAIL`.              |
+| `NEWSLETTER_POSTAL_ADDRESS`                                     | Sender postal address printed in every newsletter footer. Required to send.                       |
+| `NEWSLETTER_SIGNING_KEY`                                        | At least 32 random characters; signs unsubscribe and click links. Keep it stable.                 |
+| `RESEND_WEBHOOK_SECRET`                                         | Signing secret of the Resend webhook that reports bounces and complaints.                         |
 | `NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN`, `NEXT_PUBLIC_POSTHOG_HOST` | Optional PostHog project key and ingest host. Provisioned by the Vercel PostHog integration.      |
 | `NEXT_PUBLIC_GA_MEASUREMENT_ID`                                 | Optional Google Analytics 4 measurement ID.                                                       |
 
@@ -126,6 +131,33 @@ The verified account `mingcan@ivoracharge.com` can open `/admin` to search host 
 
 Apply `202610010001_feedback_admin.sql` before deploying this feature. Feedback, tenant access, and the append-only audit log are service-only tables with RLS; browser roles cannot read or write them or execute the admin database functions.
 
+### Host newsletter
+
+Hosts can turn on a weekly newsletter in **Settings → Host newsletter**. It is off by default and is never turned on for a host by anyone else, including an administrator using **Act as tenant**. Each change saves a timestamped record in `squid_newsletter_consent_events`, with the exact consent wording shown and whether it came from Settings or an unsubscribe link.
+
+The admin **Newsletter** tab composes issues with a title and a plain-text body. Blank lines separate paragraphs, and links use `[label](https://www.squidcharge.io/page)`; links to other sites are rejected. Each issue goes through the same steps:
+
+1. **Preview** renders the email exactly as hosts will see it.
+2. **Send test to me** sends it only to the signed-in administrator and records a hash of the tested content.
+3. **Approve** is accepted by the database only from the verified administrator, for content whose hash matches both the preview and the test. Editing an issue returns it to draft and discards its test and approval.
+4. **Send** snapshots confirmed hosts who opted in and are not suppressed. The database refuses to start a send unless the issue is approved and its content is unchanged.
+
+Nothing is sent, not even a test, until `NEWSLETTER_SENDING_ENABLED=true`, and sending also requires `RESEND_API_KEY`, a sender, `NEWSLETTER_POSTAL_ADDRESS` and `NEWSLETTER_SIGNING_KEY`. Delivery uses the Resend account already used for account emails, about two emails per second with one idempotency key per recipient. The first batch goes out when you press **Send**; `/api/cron/newsletter` continues larger sends every minute and does nothing while sending is disabled. Consent and suppression are checked again before each batch.
+
+Every newsletter email includes:
+
+- RFC 8058 one-click unsubscribe: `List-Unsubscribe` with a signed HTTPS URL and `List-Unsubscribe-Post: List-Unsubscribe=One-Click`. Mail providers POST to it directly.
+- A footer **Unsubscribe** link to a confirmation page with one button. Opening the page changes nothing, so link scanners cannot unsubscribe a host.
+- The postal address from `NEWSLETTER_POSTAL_ADDRESS`.
+
+Unsubscribing adds the address to `squid_newsletter_suppressions`, turns off the host's consent and records the change. Permanent bounces and spam complaints reported by Resend also join the suppression list. A host who later opts in again from Settings lifts their own unsubscribe; bounces and complaints stay suppressed. Register a Resend webhook at `https://<your-domain>/api/newsletter/webhook` for `email.bounced` and `email.complained`, and store its signing secret as `RESEND_WEBHOOK_SECRET`.
+
+Each issue shows sent, bounced, unsubscribed and click counts. Links in sent emails go through `/api/newsletter/click`, which follows only links signed for that recipient and pointing at an allowed Squid host. Some mail security scanners follow links, so treat clicks as an upper bound. There is no open-tracking pixel; keep Resend open and click tracking disabled.
+
+**Before enabling sending**, publish SPF and DKIM records for the sending domain as shown in Resend's domain settings and confirm the domain is verified, then publish a DMARC record, for example `_dmarc.<domain> TXT "v=DMARC1; p=none; rua=mailto:<reports-address>"`. Move to `p=quarantine` or `p=reject` once reports show aligned mail. Gmail and Yahoo require DKIM, DMARC and one-click unsubscribe for bulk senders. See [Resend domains](https://resend.com/docs/dashboard/domains/introduction) and [RFC 8058](https://www.rfc-editor.org/rfc/rfc8058).
+
+Apply `202610160001_newsletter.sql` before deploying this feature. The newsletter tables are service-only with RLS. Consent, unsubscribe, bounce, approval and send-start changes go through database functions that browser roles cannot execute.
+
 ### Analytics
 
 When their variables are set, `src/instrumentation-client.ts` starts PostHog and Google Analytics 4 in the browser. Neither loads when its variable is empty, so local development and forks send nothing by default. PostHog captures pageviews, clicks, and session replays with every form input masked; the OCPP password field is also excluded with `ph-no-capture`. PostHog traffic goes through Squid's own origin at `/ingest` (rewritten in `next.config.ts`) so ad blockers do not drop it. Sign-in and password-reset pages carry one-use tokens in the URL fragment, so neither tool starts on those pages, and fragments are stripped from every URL PostHog records. Stripe Checkout runs on Stripe's domain and is not captured.
@@ -140,7 +172,7 @@ Ivora pushes signed `charging_session.status_changed`, `bill.finalized`, and `op
 2. Set the environment variables above for the intended environment. Use separate Supabase, Stripe, and Ivora test resources for previews.
 3. Apply all Supabase migrations. Set `NEXT_PUBLIC_APP_URL` to the canonical HTTPS origin and add its Supabase callback and confirmation URLs. Configure the Resend sender if using custom email delivery.
 4. Register platform and connected-account Stripe webhooks against that origin and set both signing secrets.
-5. Set `CRON_SECRET`. The included `vercel.json` invokes `/api/cron/reconcile` every minute. Vercel supplies the bearer secret automatically.
+5. Set `CRON_SECRET`. The included `vercel.json` invokes `/api/cron/reconcile` and `/api/cron/newsletter` every minute. Vercel supplies the bearer secret automatically.
 6. Verify the complete flow with Stripe test accounts and a designated test charger. Print stickers only after choosing a stable public domain.
 
 The every-minute job requires Vercel Pro or Enterprise under the current [Cron limits](https://vercel.com/docs/cron-jobs/usage-and-pricing). For a demo on Hobby, remove the cron entry. For real sessions, supply an external scheduler every minute with `Authorization: Bearer <CRON_SECRET>`; guest polling alone is insufficient because guests can close their browser.

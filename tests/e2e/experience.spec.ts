@@ -97,6 +97,14 @@ test("landing, host demo, and navigation are mobile friendly", async ({
   await expect(
     page.getByRole("heading", { name: "Your host account" }),
   ).toBeVisible();
+  // The newsletter is opt-in: off until the host checks the box.
+  const newsletter = page.getByRole("checkbox", {
+    name: /weekly Squid host newsletter/,
+  });
+  await expect(newsletter).not.toBeChecked();
+  await newsletter.check();
+  await expect(newsletter).toBeChecked();
+  await expect(page.getByText("Subscribed", { exact: true })).toBeVisible();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,

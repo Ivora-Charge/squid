@@ -18,7 +18,7 @@ export function signInLink(
   link.hash = new URLSearchParams({ token_hash: tokenHash }).toString();
   return link.toString();
 }
-function escapeHtml(value: string) {
+export function escapeHtml(value: string) {
   return value.replace(
     /[&<>"']/g,
     (char) =>
