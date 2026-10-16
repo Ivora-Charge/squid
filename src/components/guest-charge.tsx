@@ -1,6 +1,6 @@
 "use client";
 import { browserId } from "@/lib/browser-id";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -31,6 +31,11 @@ export function GuestCharge({
   const [plugged, setPlugged] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [interactive, setInteractive] = useState(false);
+  useEffect(() => {
+    // The server-rendered inputs must wait for React, or early changes are lost.
+    setInteractive(true);
+  }, []);
   async function checkout() {
     setBusy(true);
     setError("");
@@ -146,6 +151,7 @@ export function GuestCharge({
                   max={60}
                   step={5}
                   value={energy}
+                  disabled={!interactive}
                   onChange={(e) => setEnergy(Number(e.target.value))}
                 />
                 <div className="range-labels">
@@ -177,6 +183,7 @@ export function GuestCharge({
                 <input
                   type="checkbox"
                   checked={plugged}
+                  disabled={!interactive}
                   onChange={(e) => setPlugged(e.target.checked)}
                 />
                 <span>

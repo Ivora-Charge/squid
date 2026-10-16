@@ -120,7 +120,9 @@ test("guest can preview pricing, charge, and receive a demo receipt without real
   await page.goto("/c/demo");
   const charge = page.getByRole("button", { name: "Try a demo charge" });
   await expect(charge).toBeDisabled();
-  await page.getByRole("slider").fill("30");
+  const energy = page.getByRole("slider");
+  await expect(energy).toBeEnabled();
+  await energy.fill("30");
   await expect(page.getByText("$10.50", { exact: false })).toBeVisible();
   await page.getByRole("checkbox").check();
   await charge.click();
@@ -166,6 +168,32 @@ test("session controls wait for their JavaScript before accepting a stop", async
   await expect(
     page.getByRole("heading", { name: "Ready for your next adventure." }),
   ).toBeVisible();
+});
+test("guest pricing inputs wait for their JavaScript before accepting a change", async ({
+  page,
+}) => {
+  let releaseScripts!: () => void;
+  const scriptsReady = new Promise<void>((resolve) => {
+    releaseScripts = resolve;
+  });
+  await page.route("**/_next/**/*.js", async (route) => {
+    await scriptsReady;
+    await route.continue();
+  });
+  const energy = page.getByRole("slider");
+  const plugged = page.getByRole("checkbox");
+  try {
+    await page.goto("/c/demo", { waitUntil: "commit" });
+    await expect(energy).toBeVisible();
+    await expect(energy).toBeDisabled();
+    await expect(plugged).toBeDisabled();
+  } finally {
+    releaseScripts();
+  }
+  await expect(energy).toBeEnabled();
+  await energy.fill("30");
+  await expect(page.getByText("$10.50", { exact: false })).toBeVisible();
+  await expect(plugged).toBeEnabled();
 });
 test("host generates a downloadable QR sticker with a real guest URL", async ({
   page,
