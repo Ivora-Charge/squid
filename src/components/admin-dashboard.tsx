@@ -20,8 +20,9 @@ import type {
   Tenant,
 } from "@/lib/admin-types";
 import { Brand, Busy, ErrorMessage, Modal, post } from "./ui";
+import { AdminNewsletter } from "./admin-newsletter";
 
-type View = "tenants" | "feedback" | "audit";
+type View = "tenants" | "feedback" | "audit" | "newsletter";
 type Result = {
   summary: AdminSummary;
   total: number;
@@ -77,6 +78,8 @@ export function AdminDashboard({
       first.current = false;
       return;
     }
+    // The newsletter tab loads its own data.
+    if (view === "newsletter") return;
     const controller = new AbortController();
     setLoading(true);
     setError("");
@@ -248,23 +251,27 @@ export function AdminDashboard({
           ))}
         </div>
         <nav className="admin-tabs" aria-label="Admin sections">
-          {(["tenants", "feedback", "audit"] as const).map((tab) => (
-            <button
-              key={tab}
-              className={view === tab ? "active" : ""}
-              aria-pressed={view === tab}
-              onClick={() => switchView(tab)}
-            >
-              {tab === "tenants"
-                ? "Tenants"
-                : tab === "feedback"
-                  ? "Feedback"
-                  : "Activity log"}
-              {tab === "feedback" && summary.new_feedback > 0 && (
-                <span className="count-pill">{summary.new_feedback}</span>
-              )}
-            </button>
-          ))}
+          {(["tenants", "feedback", "audit", "newsletter"] as const).map(
+            (tab) => (
+              <button
+                key={tab}
+                className={view === tab ? "active" : ""}
+                aria-pressed={view === tab}
+                onClick={() => switchView(tab)}
+              >
+                {tab === "tenants"
+                  ? "Tenants"
+                  : tab === "feedback"
+                    ? "Feedback"
+                    : tab === "audit"
+                      ? "Activity log"
+                      : "Newsletter"}
+                {tab === "feedback" && summary.new_feedback > 0 && (
+                  <span className="count-pill">{summary.new_feedback}</span>
+                )}
+              </button>
+            ),
+          )}
         </nav>
         <div className="admin-toolbar">
           <div>
@@ -273,14 +280,18 @@ export function AdminDashboard({
                 ? "Host workspaces"
                 : view === "feedback"
                   ? "Help Squid grow"
-                  : "Admin activity"}
+                  : view === "audit"
+                    ? "Admin activity"
+                    : "Host newsletter"}
             </h2>
             <p>
               {view === "tenants"
                 ? "Find a host and work in their tenant dashboard."
                 : view === "feedback"
                   ? "Ideas, issues, and feedback from across Squid."
-                  : "Tenant access, action requests, and feedback updates."}
+                  : view === "audit"
+                    ? "Tenant access, action requests, and feedback updates."
+                    : "Compose, test, approve, and send the weekly host email."}
             </p>
           </div>
           {view === "tenants" && (
@@ -316,231 +327,238 @@ export function AdminDashboard({
             </label>
           )}
         </div>
-        <ErrorMessage message={error} />
-        {loading && (
-          <p className="admin-loading" role="status">
-            <Busy>Loading…</Busy>
-          </p>
-        )}
-        <section
-          className="admin-results"
-          aria-busy={loading}
-          aria-label={
-            view === "tenants"
-              ? "Tenants"
-              : view === "feedback"
-                ? "Feedback"
-                : "Activity log"
-          }
-        >
-          {view === "tenants" &&
-            (tenants.length ? (
-              <table className="admin-tenants">
-                <thead>
-                  <tr>
-                    <th>Tenant</th>
-                    <th>Chargers</th>
-                    <th>Sessions</th>
-                    <th>Payouts</th>
-                    <th>Workspace</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {tenants.map((tenant) => (
-                    <tr key={tenant.id}>
-                      <td>
-                        <strong className="admin-tenant-email">
-                          {tenant.email}
-                        </strong>
-                        <small>
-                          {tenant.confirmed
-                            ? "Email confirmed"
-                            : "Awaiting email confirmation"}
-                        </small>
-                      </td>
-                      <td data-label="Chargers">
-                        {tenant.chargers}
-                        <small>{tenant.published_chargers} published</small>
-                      </td>
-                      <td data-label="Sessions">{tenant.sessions}</td>
-                      <td data-label="Payouts">
-                        <span
-                          className={`badge ${tenant.stripe_connected ? "green-badge" : "neutral-badge"}`}
-                        >
-                          {tenant.stripe_connected
-                            ? "Stripe connected"
-                            : "Not connected"}
-                        </span>
-                      </td>
-                      <td>
-                        {tenant.id === actor.id ? (
-                          <button
-                            className="button subtle small-button"
-                            onClick={ownWorkspace}
-                          >
-                            Your workspace <ArrowRight size={14} />
-                          </button>
-                        ) : (
-                          <button
-                            className="button secondary small-button"
-                            onClick={() => {
-                              setSelected(tenant);
-                              setReason("Support and troubleshooting");
-                              setAccessError("");
-                            }}
-                          >
-                            Act as tenant <ArrowRight size={14} />
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <div className="admin-empty">
-                <Users size={28} />
-                <h3>No tenants found.</h3>
-                <p>
-                  {search
-                    ? "Try another email, charger name, or city."
-                    : "Host accounts will appear here when they sign up."}
-                </p>
-              </div>
-            ))}
-          {view === "feedback" &&
-            (feedback.length ? (
-              <div className="admin-feedback-list">
-                {feedback.map((item) => (
-                  <article className="admin-feedback-item" key={item.id}>
-                    <div className="admin-feedback-top">
-                      <div>
-                        <span className="badge neutral-badge">
-                          {item.category === "issue"
-                            ? "Issue"
-                            : item.category === "idea"
-                              ? "Idea"
-                              : "General feedback"}
-                        </span>
-                        {item.rating && (
-                          <span className="admin-rating">
-                            {item.rating}/5 experience
-                          </span>
-                        )}
-                        <small>{date(item.created_at)}</small>
-                      </div>
-                      <label>
-                        Status
-                        <select
-                          aria-label={`Feedback status for ${item.id}`}
-                          value={item.status}
-                          disabled={updating === item.id}
-                          onChange={(event) =>
-                            updateStatus(
-                              item,
-                              event.target.value as FeedbackStatus,
-                            )
-                          }
-                        >
-                          <option value="new">New</option>
-                          <option value="reviewing">Reviewing</option>
-                          <option value="resolved">Resolved</option>
-                        </select>
-                      </label>
-                    </div>
-                    <p className="admin-feedback-message">{item.message}</p>
-                    <div className="admin-feedback-meta">
-                      <span>From {item.page_path}</span>
-                      {item.email ? (
-                        <a href={`mailto:${item.email}`}>{item.email}</a>
-                      ) : (
-                        <span>No email provided</span>
-                      )}
-                      {item.tenant_id && (
-                        <button
-                          className="text-link"
-                          onClick={() => findTenant(item.tenant_id!)}
-                        >
-                          Find tenant <ArrowRight size={14} />
-                        </button>
-                      )}
-                    </div>
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <div className="admin-empty">
-                <MessageSquare size={28} />
-                <h3>
-                  {status === "all"
-                    ? "Room for a little feedback."
-                    : "No feedback with this status."}
-                </h3>
-                <p>
-                  Messages submitted through “Help Squid grow” will appear here.
-                </p>
-              </div>
-            ))}
-          {view === "audit" &&
-            (audit.length ? (
-              <div className="admin-audit-list">
-                {audit.map((item) => (
-                  <article key={item.id} className="admin-audit-item">
-                    <div>
-                      <ShieldCheck size={18} />
-                      <strong>{eventLabels[item.event]}</strong>
-                      <small>{date(item.created_at)}</small>
-                    </div>
+        {view === "newsletter" ? (
+          <AdminNewsletter actorEmail={actor.email} />
+        ) : (
+          <>
+            <ErrorMessage message={error} />
+            {loading && (
+              <p className="admin-loading" role="status">
+                <Busy>Loading…</Busy>
+              </p>
+            )}
+            <section
+              className="admin-results"
+              aria-busy={loading}
+              aria-label={
+                view === "tenants"
+                  ? "Tenants"
+                  : view === "feedback"
+                    ? "Feedback"
+                    : "Activity log"
+              }
+            >
+              {view === "tenants" &&
+                (tenants.length ? (
+                  <table className="admin-tenants">
+                    <thead>
+                      <tr>
+                        <th>Tenant</th>
+                        <th>Chargers</th>
+                        <th>Sessions</th>
+                        <th>Payouts</th>
+                        <th>Workspace</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tenants.map((tenant) => (
+                        <tr key={tenant.id}>
+                          <td>
+                            <strong className="admin-tenant-email">
+                              {tenant.email}
+                            </strong>
+                            <small>
+                              {tenant.confirmed
+                                ? "Email confirmed"
+                                : "Awaiting email confirmation"}
+                            </small>
+                          </td>
+                          <td data-label="Chargers">
+                            {tenant.chargers}
+                            <small>{tenant.published_chargers} published</small>
+                          </td>
+                          <td data-label="Sessions">{tenant.sessions}</td>
+                          <td data-label="Payouts">
+                            <span
+                              className={`badge ${tenant.stripe_connected ? "green-badge" : "neutral-badge"}`}
+                            >
+                              {tenant.stripe_connected
+                                ? "Stripe connected"
+                                : "Not connected"}
+                            </span>
+                          </td>
+                          <td>
+                            {tenant.id === actor.id ? (
+                              <button
+                                className="button subtle small-button"
+                                onClick={ownWorkspace}
+                              >
+                                Your workspace <ArrowRight size={14} />
+                              </button>
+                            ) : (
+                              <button
+                                className="button secondary small-button"
+                                onClick={() => {
+                                  setSelected(tenant);
+                                  setReason("Support and troubleshooting");
+                                  setAccessError("");
+                                }}
+                              >
+                                Act as tenant <ArrowRight size={14} />
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <div className="admin-empty">
+                    <Users size={28} />
+                    <h3>No tenants found.</h3>
                     <p>
-                      {item.reason ??
-                        (item.method && item.path
-                          ? `${item.method} ${item.path}`
-                          : "Admin action")}
-                      {item.tenant_id && (
-                        <button
-                          className="text-link"
-                          onClick={() => findTenant(item.tenant_id!)}
-                        >
-                          Find tenant <ArrowRight size={14} />
-                        </button>
-                      )}
+                      {search
+                        ? "Try another email, charger name, or city."
+                        : "Host accounts will appear here when they sign up."}
                     </p>
-                  </article>
+                  </div>
                 ))}
+              {view === "feedback" &&
+                (feedback.length ? (
+                  <div className="admin-feedback-list">
+                    {feedback.map((item) => (
+                      <article className="admin-feedback-item" key={item.id}>
+                        <div className="admin-feedback-top">
+                          <div>
+                            <span className="badge neutral-badge">
+                              {item.category === "issue"
+                                ? "Issue"
+                                : item.category === "idea"
+                                  ? "Idea"
+                                  : "General feedback"}
+                            </span>
+                            {item.rating && (
+                              <span className="admin-rating">
+                                {item.rating}/5 experience
+                              </span>
+                            )}
+                            <small>{date(item.created_at)}</small>
+                          </div>
+                          <label>
+                            Status
+                            <select
+                              aria-label={`Feedback status for ${item.id}`}
+                              value={item.status}
+                              disabled={updating === item.id}
+                              onChange={(event) =>
+                                updateStatus(
+                                  item,
+                                  event.target.value as FeedbackStatus,
+                                )
+                              }
+                            >
+                              <option value="new">New</option>
+                              <option value="reviewing">Reviewing</option>
+                              <option value="resolved">Resolved</option>
+                            </select>
+                          </label>
+                        </div>
+                        <p className="admin-feedback-message">{item.message}</p>
+                        <div className="admin-feedback-meta">
+                          <span>From {item.page_path}</span>
+                          {item.email ? (
+                            <a href={`mailto:${item.email}`}>{item.email}</a>
+                          ) : (
+                            <span>No email provided</span>
+                          )}
+                          {item.tenant_id && (
+                            <button
+                              className="text-link"
+                              onClick={() => findTenant(item.tenant_id!)}
+                            >
+                              Find tenant <ArrowRight size={14} />
+                            </button>
+                          )}
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="admin-empty">
+                    <MessageSquare size={28} />
+                    <h3>
+                      {status === "all"
+                        ? "Room for a little feedback."
+                        : "No feedback with this status."}
+                    </h3>
+                    <p>
+                      Messages submitted through “Help Squid grow” will appear
+                      here.
+                    </p>
+                  </div>
+                ))}
+              {view === "audit" &&
+                (audit.length ? (
+                  <div className="admin-audit-list">
+                    {audit.map((item) => (
+                      <article key={item.id} className="admin-audit-item">
+                        <div>
+                          <ShieldCheck size={18} />
+                          <strong>{eventLabels[item.event]}</strong>
+                          <small>{date(item.created_at)}</small>
+                        </div>
+                        <p>
+                          {item.reason ??
+                            (item.method && item.path
+                              ? `${item.method} ${item.path}`
+                              : "Admin action")}
+                          {item.tenant_id && (
+                            <button
+                              className="text-link"
+                              onClick={() => findTenant(item.tenant_id!)}
+                            >
+                              Find tenant <ArrowRight size={14} />
+                            </button>
+                          )}
+                        </p>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="admin-empty">
+                    <ShieldCheck size={28} />
+                    <h3>No admin activity yet.</h3>
+                    <p>
+                      Tenant access and admin action requests are recorded here.
+                    </p>
+                  </div>
+                ))}
+            </section>
+            <div className="admin-pagination">
+              <span>
+                {total
+                  ? `${page * 25 + 1}–${Math.min((page + 1) * 25, total)} of ${total}`
+                  : "0 results"}
+              </span>
+              <div>
+                <button
+                  className="button subtle small-button"
+                  disabled={page === 0 || loading}
+                  onClick={() => setPage((value) => value - 1)}
+                >
+                  <ArrowLeft size={14} /> Previous
+                </button>
+                <button
+                  className="button subtle small-button"
+                  disabled={(page + 1) * 25 >= total || loading}
+                  onClick={() => setPage((value) => value + 1)}
+                >
+                  Next <ArrowRight size={14} />
+                </button>
               </div>
-            ) : (
-              <div className="admin-empty">
-                <ShieldCheck size={28} />
-                <h3>No admin activity yet.</h3>
-                <p>
-                  Tenant access and admin action requests are recorded here.
-                </p>
-              </div>
-            ))}
-        </section>
-        <div className="admin-pagination">
-          <span>
-            {total
-              ? `${page * 25 + 1}–${Math.min((page + 1) * 25, total)} of ${total}`
-              : "0 results"}
-          </span>
-          <div>
-            <button
-              className="button subtle small-button"
-              disabled={page === 0 || loading}
-              onClick={() => setPage((value) => value - 1)}
-            >
-              <ArrowLeft size={14} /> Previous
-            </button>
-            <button
-              className="button subtle small-button"
-              disabled={(page + 1) * 25 >= total || loading}
-              onClick={() => setPage((value) => value + 1)}
-            >
-              Next <ArrowRight size={14} />
-            </button>
-          </div>
-        </div>
+            </div>
+          </>
+        )}
       </main>
       {selected && (
         <Modal

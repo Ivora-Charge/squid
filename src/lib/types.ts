@@ -1,5 +1,6 @@
 import type { ChargerStatus, GuestAvailability } from "./status";
 import type { ActingAs } from "./admin-types";
+import type { NewsletterConsent } from "./newsletter";
 export type CityPhoto = {
   url: string;
   sourceUrl: string;
@@ -106,6 +107,8 @@ export type DashboardData = {
   status: Record<string, ChargerStatus>;
   isAdmin?: boolean;
   actingAs?: ActingAs | null;
+  // null when the newsletter tables are not installed yet.
+  newsletter?: NewsletterConsent | null;
 };
 export type PublicProperty = Pick<
   Property,

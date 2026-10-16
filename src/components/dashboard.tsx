@@ -49,6 +49,7 @@ import { QRSticker } from "./qr-sticker";
 import { CityPhoto } from "./city-photo";
 import { money } from "@/lib/money";
 import type { DashboardData, HostSession, Property } from "@/lib/types";
+import { NEWSLETTER_CONSENT, type NewsletterConsent } from "@/lib/newsletter";
 import type { ChargerStatus } from "@/lib/status";
 // What reaches the host: the guest's payment less Squid's fee and Stripe's fee.
 function hostShare(s: HostSession) {
@@ -82,6 +83,11 @@ export function Dashboard({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [refund, setRefund] = useState<HostSession | null>(null);
+  const [newsletter, setNewsletter] = useState<NewsletterConsent>(
+    initial.newsletter ?? { subscribed: false, updatedAt: null },
+  );
+  const [newsletterBusy, setNewsletterBusy] = useState(false);
+  const [newsletterError, setNewsletterError] = useState("");
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const t = params.get("tab");
@@ -210,6 +216,23 @@ export function Dashboard({
     }
     if (!demo) await post("/auth/logout", {});
     window.location.assign("/");
+  }
+  async function updateNewsletter(subscribed: boolean) {
+    setNewsletterBusy(true);
+    setNewsletterError("");
+    try {
+      setNewsletter(
+        demo
+          ? { subscribed, updatedAt: new Date().toISOString() }
+          : await post<NewsletterConsent>("/api/host/newsletter", {
+              subscribed,
+            }),
+      );
+    } catch (e) {
+      setNewsletterError((e as Error).message);
+    } finally {
+      setNewsletterBusy(false);
+    }
   }
   async function connect() {
     if (!canStartStripe) {
@@ -914,6 +937,50 @@ export function Dashboard({
                       <ArrowUpRight size={16} />
                     </button>
                   </section>
+                  {data.newsletter !== null && (
+                    <section className="panel settings-card full-width">
+                      <div className="section-top">
+                        <h2>Host newsletter</h2>
+                        <span
+                          className={`badge ${newsletter.subscribed ? "green-badge" : "neutral-badge"}`}
+                        >
+                          {newsletter.subscribed ? "Subscribed" : "Off"}
+                        </span>
+                      </div>
+                      <p>
+                        A short weekly email from Squid. It stays off unless you
+                        turn it on, and every issue has a one-click unsubscribe
+                        link.
+                      </p>
+                      <label className="checkbox-label newsletter-consent">
+                        <input
+                          type="checkbox"
+                          checked={newsletter.subscribed}
+                          disabled={newsletterBusy || Boolean(data.actingAs)}
+                          onChange={(event) =>
+                            updateNewsletter(event.target.checked)
+                          }
+                        />
+                        {NEWSLETTER_CONSENT}
+                      </label>
+                      {newsletter.updatedAt && (
+                        <p className="fine-print">
+                          {newsletter.subscribed ? "Subscribed" : "Turned off"}{" "}
+                          {new Date(newsletter.updatedAt).toLocaleString(
+                            "en-US",
+                            { dateStyle: "medium", timeStyle: "short" },
+                          )}
+                          .
+                        </p>
+                      )}
+                      {data.actingAs && (
+                        <p className="fine-print">
+                          Only the host can change this preference.
+                        </p>
+                      )}
+                      <ErrorMessage message={newsletterError} />
+                    </section>
+                  )}
                   <section className="panel settings-card full-width">
                     <Code2 size={24} />
                     <h2>Open source. Yours to shape.</h2>
