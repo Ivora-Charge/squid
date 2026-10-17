@@ -82,9 +82,12 @@ export async function configureCredentials(p: Property) {
       409,
       "Finish registering the charger before preparing its password.",
     );
-  // Ivora stores the password for an offline charger's next connection and
-  // pushes it to a connected OCPP 2.0.1 charger; only a connected OCPP 1.6
-  // charger is rejected, so no online pre-check is needed.
+  // Ivora stores the password for a new or offline charger's next connection.
+  // It refuses to change a connected charger's password: station_online for
+  // OCPP 1.6, and stations_admin_required for OCPP 2.0.1 unless the API key
+  // holds stations:admin, which Squid deliberately does not request. Neither
+  // rejection reaches the charger, so no online pre-check is needed and the
+  // host can retry once the charger is disconnected.
   const key = `${p.id}:preset-credentials`;
   let result;
   try {
@@ -95,11 +98,13 @@ export async function configureCredentials(p: Property) {
       "PUT",
     );
   } catch (error) {
-    if (error instanceof IvoraError && error.code === "station_online")
+    if (error instanceof IvoraError && CONNECTED.has(error.code)) {
+      await forget(key);
       throw disconnectFirst();
+    }
     throw error;
   }
-  if (rejectionCode(result) === "station_online") {
+  if (CONNECTED.has(rejectionCode(result) ?? "")) {
     // A rejection never reached the charger; let the next attempt dispatch again.
     await forget(key);
     throw disconnectFirst();
@@ -116,6 +121,8 @@ export async function configureCredentials(p: Property) {
       .eq("property_id", p.id),
   );
 }
+// Ivora's codes for "this charger is connected, so its password was not sent".
+const CONNECTED = new Set(["station_online", "stations_admin_required"]);
 function disconnectFirst() {
   return new HttpError(
     409,

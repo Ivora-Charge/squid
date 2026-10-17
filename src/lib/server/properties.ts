@@ -4,6 +4,7 @@ import { checked, db, withLock } from "./db";
 import {
   createResource,
   getStation,
+  IvoraError,
   locationRecordSchema,
   stationSchema as stationRecordSchema,
   tariffRecordSchema,
@@ -137,7 +138,17 @@ export async function provision(hostId: string, id: string): Promise<Property> {
       );
       await save({ tariff_id: tariff.id });
     }
-    await configureCredentials(p);
+    // A pending preset must never block the rest of setup. It stays pending,
+    // and the host's explicit password action reports why it can't finish.
+    try {
+      await configureCredentials(p);
+    } catch (error) {
+      console.error(
+        "[Squid] preset credentials",
+        error instanceof Error ? error.name : "UnknownError",
+        error instanceof IvoraError ? error.code : "",
+      );
+    }
     if (!p.connector_id || !p.ocpp_url) {
       const station = await getStation(p.station_id!);
       await save({

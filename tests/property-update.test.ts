@@ -48,6 +48,9 @@ vi.mock("@/lib/server/charger-credentials", () => ({
   seedCredentials: vi.fn(),
 }));
 import { POST } from "@/app/api/host/properties/[id]/route";
+import { configureCredentials } from "@/lib/server/charger-credentials";
+import { IvoraError } from "@/lib/server/ivora";
+import { HttpError } from "@/lib/server/security";
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://squid.example");
@@ -180,4 +183,38 @@ it("accepts any positive price, with no ceiling", async () => {
     rate_cents: 1250,
     tariff_id: 7,
   });
+});
+it("finishes resume setup when a pending preset is refused for a connected charger", async () => {
+  Object.assign(mocks.row, { connector_id: null, ocpp_url: null });
+  vi.mocked(configureCredentials).mockRejectedValueOnce(
+    new HttpError(
+      409,
+      "Disconnect your charger before preparing its connection password.",
+    ),
+  );
+  const result = await update({ action: "resume" });
+  expect(result.status).toBe(200);
+  expect(configureCredentials).toHaveBeenCalledTimes(1);
+  expect(mocks.getStation).toHaveBeenCalledWith(3);
+  expect(result.body.property).toMatchObject({ connector_id: 3 });
+});
+it("finishes resume setup when the preset hits Ivora's credential rate limit", async () => {
+  Object.assign(mocks.row, { connector_id: null });
+  vi.mocked(configureCredentials).mockRejectedValueOnce(
+    new IvoraError(429, "credential_rate_limited", "x", null, null, 600),
+  );
+  const result = await update({ action: "resume" });
+  expect(result.status).toBe(200);
+  expect(result.body.property).toMatchObject({ connector_id: 3 });
+});
+it("still reports a refused preset when the host asks for it explicitly", async () => {
+  vi.mocked(configureCredentials).mockRejectedValueOnce(
+    new HttpError(
+      409,
+      "Disconnect your charger before preparing its connection password.",
+    ),
+  );
+  const result = await update({ action: "credentials" });
+  expect(result.status).toBe(409);
+  expect(result.body.error).toMatch(/Disconnect your charger/);
 });

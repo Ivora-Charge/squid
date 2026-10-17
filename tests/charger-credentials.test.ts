@@ -113,13 +113,8 @@ describe("preset charger credentials", () => {
     await configureCredentials(property);
     expect(mocks.operation).toHaveBeenCalledTimes(1);
   });
-  it("presets a connected OCPP 2.0.1 charger, which Ivora pushes over OCPP", async () => {
+  it("marks a new or offline station configured once Ivora stores its password", async () => {
     await seedCredentials(property.id);
-    mocks.operation.mockResolvedValue({
-      id: "op_1",
-      status: "succeeded",
-      result: { applied: "pushed" },
-    });
     await configureCredentials(property);
     expect(mocks.operation).toHaveBeenCalledWith(
       `${property.id}:preset-credentials`,
@@ -127,6 +122,7 @@ describe("preset charger credentials", () => {
       { password: expect.any(String) },
       "PUT",
     );
+    expect(mocks.rows.get(property.id)!.configured).toBe(true);
     expect((await chargerCredentials(property.id)).password).toHaveLength(16);
   });
   it("leaves a connected OCPP 1.6 charger alone and lets the host retry after unplugging", async () => {
@@ -156,5 +152,72 @@ describe("preset charger credentials", () => {
       new IvoraError(409, "station_online", "Connected"),
     );
     await expect(configureCredentials(property)).rejects.toThrow(/Disconnect/);
+  });
+  it("asks the host to disconnect a connected OCPP 2.0.1 charger instead of using stations:admin", async () => {
+    await seedCredentials(property.id);
+    const { IvoraError } = await import("@/lib/server/ivora");
+    mocks.operation.mockRejectedValueOnce(
+      new IvoraError(
+        403,
+        "stations_admin_required",
+        "Needs stations:admin",
+        null,
+        {
+          applied: "not_sent",
+        },
+      ),
+    );
+    const error = await configureCredentials(property).catch((e: unknown) => e);
+    expect(error).toMatchObject({
+      status: 409,
+      message:
+        "Disconnect your charger before preparing its connection password.",
+    });
+    expect(mocks.forget).toHaveBeenCalledWith(
+      `${property.id}:preset-credentials`,
+    );
+    expect(await chargerCredentials(property.id)).toEqual({
+      password: null,
+      pending: true,
+    });
+    // Once the charger is disconnected, the retry dispatches again.
+    await configureCredentials(property);
+    expect(mocks.operation).toHaveBeenCalledTimes(2);
+    expect(mocks.rows.get(property.id)!.configured).toBe(true);
+  });
+  it("maps a rejected stations_admin_required operation the same way", async () => {
+    await seedCredentials(property.id);
+    mocks.operation.mockResolvedValueOnce({
+      id: "op_1",
+      status: "rejected",
+      result: {
+        error: {
+          code: "stations_admin_required",
+          details: { applied: "not_sent" },
+        },
+      },
+    });
+    await expect(configureCredentials(property)).rejects.toMatchObject({
+      status: 409,
+    });
+    expect(mocks.forget).toHaveBeenCalledWith(
+      `${property.id}:preset-credentials`,
+    );
+    expect(mocks.rows.get(property.id)!.configured).toBe(false);
+  });
+  it("passes a credential rate limit through and leaves the preset pending", async () => {
+    await seedCredentials(property.id);
+    const { IvoraError } = await import("@/lib/server/ivora");
+    const limited = new IvoraError(
+      429,
+      "credential_rate_limited",
+      "Too many changes",
+      null,
+      null,
+      600,
+    );
+    mocks.operation.mockRejectedValueOnce(limited);
+    await expect(configureCredentials(property)).rejects.toBe(limited);
+    expect(mocks.rows.get(property.id)!.configured).toBe(false);
   });
 });
