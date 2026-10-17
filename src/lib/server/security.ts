@@ -61,13 +61,16 @@ const IVORA_MESSAGES: Record<string, { status: number; message: string }> = {
     message:
       "Disconnect your charger before preparing its connection password.",
   },
+  // A connected charger's password needs the stations:admin scope, which
+  // Squid does not use; nothing was sent to the charger.
+  stations_admin_required: {
+    status: 409,
+    message:
+      "Disconnect your charger before preparing its connection password.",
+  },
   request_in_progress: {
     status: 409,
     message: "This action is already in progress. Please retry shortly.",
-  },
-  rate_limited: {
-    status: 429,
-    message: "Too many charger requests right now. Try again in a minute.",
   },
   outcome_unknown: {
     status: 503,
@@ -87,10 +90,30 @@ const IVORA_MESSAGES: Record<string, { status: number; message: string }> = {
     message: "The charger network is unavailable. Please try again shortly.",
   },
 };
+export function rateLimitMessage(retryAfter?: number | null) {
+  const minutes = retryAfter ? Math.max(1, Math.ceil(retryAfter / 60)) : 0;
+  return `Too many charger requests right now. Try again in ${
+    minutes > 1 ? `${minutes} minutes` : minutes ? "1 minute" : "a minute"
+  }.`;
+}
 export function failure(error: unknown) {
   if (error instanceof Error && error.name === "IvoraError") {
-    const { code, requestId } = error as { code?: string; requestId?: string };
+    const { code, requestId, status, retryAfter } = error as {
+      code?: string;
+      requestId?: string;
+      status?: number;
+      retryAfter?: number | null;
+    };
     console.error("[Squid] IvoraError", code, requestId ?? "");
+    // Every Ivora rate limit, whatever its code, gets the same friendly 429.
+    if (status === 429 || code === "rate_limited")
+      return NextResponse.json(
+        { error: rateLimitMessage(retryAfter) },
+        {
+          status: 429,
+          headers: retryAfter ? { "Retry-After": String(retryAfter) } : {},
+        },
+      );
     const known = IVORA_MESSAGES[code ?? ""];
     if (known)
       return NextResponse.json(

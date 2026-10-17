@@ -92,12 +92,22 @@ export class IvoraError extends Error {
     message: string,
     public requestId: string | null = null,
     public details: Record<string, unknown> | null = null,
+    // Seconds from Retry-After, when Ivora sends it (rate limits).
+    public retryAfter: number | null = null,
   ) {
     super(message);
   }
 }
+// Retry-After is either delay-seconds or an HTTP date.
+export function retryAfterSeconds(value: string | null, now = Date.now()) {
+  if (!value) return null;
+  if (/^\d+$/.test(value.trim())) return Number(value.trim());
+  const at = Date.parse(value);
+  return Number.isNaN(at) ? null : Math.max(0, Math.ceil((at - now) / 1000));
+}
 async function ivoraError(response: Response) {
   const parsed = errorSchema.safeParse(await response.json().catch(() => null));
+  const retryAfter = retryAfterSeconds(response.headers.get("retry-after"));
   return parsed.success
     ? new IvoraError(
         response.status,
@@ -105,11 +115,15 @@ async function ivoraError(response: Response) {
         parsed.data.error.message,
         parsed.data.request_id ?? null,
         parsed.data.error.details ?? null,
+        retryAfter,
       )
     : new IvoraError(
         response.status,
         response.status === 429 ? "rate_limited" : "http_error",
         `Ivora request failed (${response.status}).`,
+        null,
+        null,
+        retryAfter,
       );
 }
 // A rejected operation repeats the error shape in result.error.

@@ -8,7 +8,9 @@ vi.mock("next/headers", () => ({
   }),
 }));
 vi.mock("@/lib/server/db", () => ({ user: async () => null }));
+import { IvoraError } from "@/lib/server/ivora";
 import {
+  failure,
   guestToken,
   issueGuestCookie,
   requireGuest,
@@ -61,5 +63,32 @@ describe("application authorization", () => {
         }),
       ),
     ).not.toThrow();
+  });
+});
+describe("Ivora failures shown to hosts", () => {
+  it("asks the host to disconnect when a password change needs stations:admin", async () => {
+    const response = failure(
+      new IvoraError(403, "stations_admin_required", "Needs stations:admin"),
+    );
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error:
+        "Disconnect your charger before preparing its connection password.",
+    });
+  });
+  it("maps any Ivora 429 to the friendly rate limit with its Retry-After", async () => {
+    const limited = failure(
+      new IvoraError(429, "credential_rate_limited", "x", null, null, 600),
+    );
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("Retry-After")).toBe("600");
+    expect(await limited.json()).toEqual({
+      error: "Too many charger requests right now. Try again in 10 minutes.",
+    });
+    const brief = failure(new IvoraError(429, "anything", "x", null, null, 30));
+    expect((await brief.json()).error).toMatch(/Try again in 1 minute\.$/);
+    const bare = failure(new IvoraError(429, "rate_limited", "x"));
+    expect(bare.status).toBe(429);
+    expect((await bare.json()).error).toMatch(/Try again in a minute\.$/);
   });
 });
