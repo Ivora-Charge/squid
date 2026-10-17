@@ -82,6 +82,7 @@ async function ensureCheckout(
   s: ChargeSession,
   p: Property,
   options: Stripe.RequestOptions,
+  origin = appUrl(),
 ) {
   if (s.stripe_checkout_id) return;
   const key = `${s.id}:checkout`;
@@ -121,8 +122,8 @@ async function ensureCheckout(
               },
             },
           ],
-          success_url: `${appUrl()}/session/${s.id}`,
-          cancel_url: `${appUrl()}/session/${s.id}`,
+          success_url: `${origin}/session/${s.id}`,
+          cancel_url: `${origin}/session/${s.id}`,
         },
         { ...options, idempotencyKey: key },
       );
@@ -135,7 +136,11 @@ async function ensureCheckout(
     checkout_url: checkout.url,
   });
 }
-export async function createCheckout(slug: string, requestId: string) {
+export async function createCheckout(
+  slug: string,
+  requestId: string,
+  origin = appUrl(),
+) {
   const { data: p, error } = await db()
     .from("squid_properties")
     .select("*")
@@ -156,6 +161,7 @@ export async function createCheckout(slug: string, requestId: string) {
         prior as ChargeSession,
         p as Property,
         await paymentOptions(prior.stripe_account_id),
+        origin,
       );
       return loadSession(prior.id);
     }
@@ -199,7 +205,12 @@ export async function createCheckout(slug: string, requestId: string) {
         "A guest is already starting or using this charger. Please try again shortly.",
       );
     const s = checked(insertion) as ChargeSession;
-    await ensureCheckout(s, p as Property, { stripeAccount: account.id });
+    await ensureCheckout(
+      s,
+      p as Property,
+      { stripeAccount: account.id },
+      origin,
+    );
     return loadSession(id);
   });
 }

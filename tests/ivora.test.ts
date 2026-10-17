@@ -60,8 +60,10 @@ import {
   ivora,
   IvoraError,
   rejectionCode,
+  retryAfterSeconds,
   tenantPath,
   verifyWebhookSignature,
+  writeIvora,
 } from "@/lib/server/ivora";
 const fetchMock = vi.fn();
 function reply(status: number, body: unknown) {
@@ -117,6 +119,61 @@ describe("Ivora client errors", () => {
       (e: unknown) => e,
     );
     expect(error).toMatchObject({ code: "http_error", status: 502 });
+  });
+  it("keeps Ivora's Retry-After on a rate limit, whatever its code", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          error: { code: "credential_rate_limited", message: "Slow down." },
+        }),
+        { status: 429, headers: { "Retry-After": "600" } },
+      ),
+    );
+    const error = await ivora(tenantPath("stations/43"), record).catch(
+      (e: unknown) => e,
+    );
+    expect(error).toMatchObject({
+      status: 429,
+      code: "credential_rate_limited",
+      retryAfter: 600,
+    });
+  });
+  it("reads Retry-After as seconds or an HTTP date", () => {
+    const now = Date.parse("2026-10-17T12:00:00Z");
+    expect(retryAfterSeconds("120", now)).toBe(120);
+    expect(retryAfterSeconds("Sat, 17 Oct 2026 12:05:00 GMT", now)).toBe(300);
+    expect(retryAfterSeconds("soon", now)).toBeNull();
+    expect(retryAfterSeconds(null, now)).toBeNull();
+  });
+  it("lets a request Ivora refused with an HTTP error dispatch again under its key", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        reply(403, {
+          error: {
+            code: "stations_admin_required",
+            message: "Needs stations:admin.",
+            details: { applied: "not_sent" },
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        reply(200, { id: "op_1", status: "succeeded", result: null }),
+      );
+    const schema = z.object({ id: z.string(), status: z.string() });
+    const send = () =>
+      writeIvora(
+        "p:preset-credentials",
+        "stations/43/credentials",
+        schema,
+        { password: "X" },
+        "PUT",
+      );
+    await expect(send()).rejects.toMatchObject({
+      code: "stations_admin_required",
+    });
+    expect(store.rows.get("p:preset-credentials")?.response).toBeNull();
+    await expect(send()).resolves.toMatchObject({ status: "succeeded" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
   it("reads the code out of a rejected operation", () => {
     expect(

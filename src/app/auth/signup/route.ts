@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
         type: "signup",
         email,
         password,
-        options: { redirectTo: `${appUrl()}/login/confirm` },
+        options: { redirectTo: `${appUrl(request)}/login/confirm` },
       });
       // Do not expose whether the address is already registered or overwrite an
       // existing account's password. Its owner can use password recovery.
@@ -38,7 +38,12 @@ export async function POST(request: NextRequest) {
           error || {},
           "Could not create your account. Please try again shortly.",
         );
-      await sendSignInEmail(email, data.properties.hashed_token, "signup");
+      await sendSignInEmail(
+        email,
+        data.properties.hashed_token,
+        "signup",
+        appUrl(request),
+      );
       return authSuccess({ ok: true, confirmationRequired: true });
     }
     const { data, error } = await (
@@ -46,7 +51,7 @@ export async function POST(request: NextRequest) {
     ).auth.signUp({
       email,
       password,
-      options: { emailRedirectTo: `${appUrl()}/auth/callback` },
+      options: { emailRedirectTo: `${appUrl(request)}/auth/callback` },
     });
     if (error?.code === "email_exists" || error?.code === "user_already_exists")
       return authSuccess({ ok: true, confirmationRequired: true });

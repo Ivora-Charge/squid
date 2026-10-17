@@ -132,7 +132,7 @@ vi.mock("@/lib/server/ivora", async (importOriginal) => {
     writeIvora: mock.write,
   };
 });
-import { reconcile } from "@/lib/server/sessions";
+import { createCheckout, reconcile } from "@/lib/server/sessions";
 beforeEach(() => {
   vi.clearAllMocks();
   mock.mode = "direct";
@@ -287,6 +287,29 @@ describe("external-funded charging settlement", () => {
         stripeAccount: "acct_host",
       },
     );
+  });
+  it("returns guests from Checkout to the origin they started on", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://squid.example");
+    mock.session.stripe_checkout_id = null;
+    // The fixture serves this row as both the published property and the
+    // retried request, so align their identifiers.
+    mock.session.property_id = mock.session.id;
+    await createCheckout(
+      "weekender",
+      "request-one",
+      "https://pr-12.preview.example",
+    );
+    expect(mock.createCheckout.mock.calls[0][0]).toMatchObject({
+      success_url: "https://pr-12.preview.example/session/session-one",
+      cancel_url: "https://pr-12.preview.example/session/session-one",
+    });
+    mock.session.stripe_checkout_id = null;
+    mock.createCheckout.mockClear();
+    await reconcile("session-one");
+    expect(mock.createCheckout.mock.calls[0][0]).toMatchObject({
+      success_url: "https://squid.example/session/session-one",
+    });
+    vi.unstubAllEnvs();
   });
   it("creates an unfinished legacy Checkout session as a destination charge", async () => {
     mock.mode = "destination";

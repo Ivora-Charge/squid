@@ -18,6 +18,7 @@ test("feedback is available on public, host, and guest pages without covering th
       exact: true,
     });
     await expect(launcher).toBeVisible();
+    await expect(launcher).toBeEnabled();
     if (isMobile && path === "/demo") {
       const button = await launcher.boundingBox();
       const nav = await page.locator(".mobile-nav").boundingBox();
@@ -57,7 +58,9 @@ test("a failed submission keeps the draft and retries without duplicating feedba
     });
   });
   await page.goto("/c/demo");
-  await page.getByRole("button", { name: "Feedback", exact: true }).click();
+  const launcher = page.getByRole("button", { name: "Feedback", exact: true });
+  await expect(launcher).toBeEnabled();
+  await launcher.click();
   const form = page.getByRole("dialog", { name: "Help Squid grow" });
   await form
     .getByRole("textbox", { name: "Your feedback" })
@@ -77,7 +80,8 @@ test("a failed submission keeps the draft and retries without duplicating feedba
   expect(requests[0]).toEqual(requests[1]);
   expect(requests[0]).toMatchObject({ rating: 4, email: "", page: "/c/demo" });
   await form.getByRole("button", { name: "Done" }).click();
-  await page.getByRole("button", { name: "Feedback", exact: true }).click();
+  await expect(launcher).toBeEnabled();
+  await launcher.click();
   await expect(
     form.getByRole("textbox", { name: "Your feedback" }),
   ).toHaveValue("");
@@ -87,10 +91,14 @@ test("feedback opens from an existing dialog and returns focus to that dialog", 
   page,
 }) => {
   await page.goto("/demo");
-  await page
+  await expect(
+    page.getByRole("button", { name: "Feedback", exact: true }),
+  ).toBeEnabled();
+  const sticker = page
     .getByRole("button", { name: "QR sticker", exact: true })
-    .first()
-    .click();
+    .first();
+  await expect(sticker).toBeEnabled();
+  await sticker.click();
   const parent = page.getByRole("dialog").first();
   await parent.getByRole("button", { name: "Help Squid grow" }).click();
   const form = page.getByRole("dialog", { name: "Help Squid grow" });
@@ -117,10 +125,14 @@ test("leaving a page with nested dialogs restores scrolling", async ({
 }) => {
   await page.goto("/");
   await page.getByRole("link", { name: "Take a look around" }).click();
-  await page
+  await expect(
+    page.getByRole("button", { name: "Feedback", exact: true }),
+  ).toBeEnabled();
+  const sticker = page
     .getByRole("button", { name: "QR sticker", exact: true })
-    .first()
-    .click();
+    .first();
+  await expect(sticker).toBeEnabled();
+  await sticker.click();
   await page
     .getByRole("dialog")
     .getByRole("button", { name: "Help Squid grow" })
@@ -136,4 +148,29 @@ test("leaving a page with nested dialogs restores scrolling", async ({
   expect(await page.evaluate(() => document.body.style.overflow)).not.toBe(
     "hidden",
   );
+});
+test("the feedback launcher waits for its JavaScript before accepting a click", async ({
+  page,
+}) => {
+  let releaseScripts!: () => void;
+  const scriptsReady = new Promise<void>((resolve) => {
+    releaseScripts = resolve;
+  });
+  await page.route("**/_next/**/*.js", async (route) => {
+    await scriptsReady;
+    await route.continue();
+  });
+  const launcher = page.getByRole("button", { name: "Feedback", exact: true });
+  try {
+    await page.goto("/c/demo", { waitUntil: "commit" });
+    await expect(launcher).toBeVisible();
+    await expect(launcher).toBeDisabled();
+  } finally {
+    releaseScripts();
+  }
+  await expect(launcher).toBeEnabled();
+  await launcher.click();
+  await expect(
+    page.getByRole("dialog", { name: "Help Squid grow" }),
+  ).toBeVisible();
 });

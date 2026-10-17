@@ -111,6 +111,29 @@ it("keeps normal settings onboarding working", async () => {
     }),
   );
 });
+it("returns hosts to the allow-listed preview they started from", async () => {
+  vi.stubEnv("VERCEL_ENV", "preview");
+  vi.stubEnv("PREVIEW_HOST_SUFFIX", ".preview.example");
+  const preview = new NextRequest(
+    "https://pr-12.preview.example/api/host/connect",
+    {
+      method: "POST",
+      headers: {
+        host: "pr-12.preview.example",
+        origin: "https://pr-12.preview.example",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ propertyId: property }),
+    },
+  );
+  expect((await POST(preview)).status).toBe(200);
+  expect(mocks.link).toHaveBeenCalledWith(
+    expect.objectContaining({
+      return_url: `https://pr-12.preview.example/dashboard?setup=${property}`,
+      refresh_url: `https://pr-12.preview.example/dashboard?setup=${property}`,
+    }),
+  );
+});
 it("creates an Accounts v2 Express merchant with Stripe-managed risk", async () => {
   mocks.accountId = undefined;
   expect((await POST(request({ propertyId: property }))).status).toBe(200);

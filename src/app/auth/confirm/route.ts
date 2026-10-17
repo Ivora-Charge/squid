@@ -12,10 +12,13 @@ export async function GET(request: NextRequest) {
   // Existing Supabase email templates can still use this URL. A GET never
   // consumes the link, so an email security scanner cannot sign in on its own.
   if (parsed.success)
-    return NextResponse.redirect(signInLink(parsed.data), {
-      headers: { "Cache-Control": "private, no-store" },
-    });
-  return NextResponse.redirect(`${appUrl()}/login?error=expired`);
+    return NextResponse.redirect(
+      signInLink(parsed.data, "signin", appUrl(request)),
+      {
+        headers: { "Cache-Control": "private, no-store" },
+      },
+    );
+  return NextResponse.redirect(`${appUrl(request)}/login?error=expired`);
 }
 export async function POST(request: NextRequest) {
   try {

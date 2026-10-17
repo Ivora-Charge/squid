@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
       const { data, error } = await db().auth.admin.generateLink({
         type: "recovery",
         email,
-        options: { redirectTo: `${appUrl()}/login/reset` },
+        options: { redirectTo: `${appUrl(request)}/login/reset` },
       });
       // Recovery must neither create new users nor reveal account existence.
       if (error?.code === "user_not_found") return authSuccess();
@@ -31,13 +31,18 @@ export async function POST(request: NextRequest) {
           error || {},
           "Could not request a reset email. Please try again shortly.",
         );
-      await sendSignInEmail(email, data.properties.hashed_token, "recovery");
+      await sendSignInEmail(
+        email,
+        data.properties.hashed_token,
+        "recovery",
+        appUrl(request),
+      );
       return authSuccess();
     }
     const { error } = await (
       await auth()
     ).auth.resetPasswordForEmail(email, {
-      redirectTo: `${appUrl()}/auth/callback?next=/login/reset`,
+      redirectTo: `${appUrl(request)}/auth/callback?next=/login/reset`,
     });
     if (error)
       authProviderFailure(
