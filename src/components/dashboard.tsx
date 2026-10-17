@@ -355,6 +355,7 @@ export function Dashboard({
             <button
               key={n.id}
               className={`side-link ${tab === n.id ? "active" : ""}`}
+              disabled={!ready}
               onClick={() => switchTab(n.id)}
             >
               <n.icon size={19} />
@@ -380,19 +381,24 @@ export function Dashboard({
             </strong>
             <p>That’s the Squid way.</p>
           </div>
-          <button className="side-link" onClick={() => setHelp(true)}>
+          <button
+            className="side-link"
+            disabled={!ready}
+            onClick={() => setHelp(true)}
+          >
             <HelpCircle size={18} />
             <span>A little help</span>
             <ArrowUpRight size={14} />
           </button>
           <button
             className={`side-link ${tab === "settings" ? "active" : ""}`}
+            disabled={!ready}
             onClick={() => switchTab("settings")}
           >
             <Settings size={18} />
             <span>Settings</span>
           </button>
-          <button className="side-link" onClick={signOut}>
+          <button className="side-link" disabled={!ready} onClick={signOut}>
             <LogOut size={18} />
             <span>
               {demo
@@ -402,7 +408,11 @@ export function Dashboard({
                   : "Sign out"}
             </span>
           </button>
-          <button className="profile" onClick={() => switchTab("settings")}>
+          <button
+            className="profile"
+            disabled={!ready}
+            onClick={() => switchTab("settings")}
+          >
             <span className="avatar">
               {demo ? "AL" : data.email.slice(0, 2).toUpperCase()}
             </span>
@@ -459,6 +469,7 @@ export function Dashboard({
             <button
               className="icon-button notification-button"
               aria-label="Notifications"
+              disabled={!ready}
               onClick={() => setNotifications(!notifications)}
             >
               <Bell size={19} />
@@ -479,6 +490,7 @@ export function Dashboard({
                     ? "Return to admin"
                     : "Sign out"
               }
+              disabled={!ready}
               onClick={signOut}
             >
               <LogOut size={19} />
@@ -569,6 +581,7 @@ export function Dashboard({
                       className="period-select"
                       aria-label="Time period"
                       value={days}
+                      disabled={!ready}
                       onChange={(e) => setDays(Number(e.target.value))}
                     >
                       <option value={30}>Last 30 days</option>
@@ -686,6 +699,7 @@ export function Dashboard({
                     {tab === "overview" ? (
                       <button
                         className="text-link"
+                        disabled={!ready}
                         onClick={() => switchTab("chargers")}
                       >
                         All chargers <ArrowRight size={16} />
@@ -724,6 +738,7 @@ export function Dashboard({
                           <button
                             className="picture-menu"
                             aria-label={`Manage ${p.name}`}
+                            disabled={!ready}
                             onClick={() => openCharger(p)}
                           >
                             <MoreHorizontal size={20} />
@@ -737,6 +752,7 @@ export function Dashboard({
                             <h3>
                               <button
                                 className="charger-open"
+                                disabled={!ready}
                                 onClick={() => openCharger(p)}
                               >
                                 {p.name}
@@ -765,6 +781,7 @@ export function Dashboard({
                             </Link>
                             <button
                               className="sticker-button"
+                              disabled={!ready}
                               onClick={() => setSticker(p)}
                             >
                               <QrCode size={16} /> QR sticker
@@ -815,6 +832,7 @@ export function Dashboard({
                       )}
                       <button
                         className="button secondary small-button"
+                        disabled={!ready}
                         onClick={exportCsv}
                       >
                         <Download size={15} /> Export
@@ -829,6 +847,7 @@ export function Dashboard({
                   {tab === "overview" && (
                     <button
                       className="table-view-all"
+                      disabled={!ready}
                       onClick={() => switchTab("sessions")}
                     >
                       View all sessions <ArrowRight size={15} />
@@ -1021,6 +1040,7 @@ export function Dashboard({
           <button
             key={n.id}
             className={tab === n.id ? "active" : ""}
+            disabled={!ready}
             onClick={() => switchTab(n.id)}
           >
             <n.icon size={21} />
@@ -1037,6 +1057,7 @@ export function Dashboard({
         ))}
         <button
           className={tab === "settings" ? "active" : ""}
+          disabled={!ready}
           onClick={() => switchTab("settings")}
         >
           <Settings size={21} />

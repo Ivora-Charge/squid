@@ -16,6 +16,7 @@ export function FeedbackButton() {
   const [category, setCategory] = useState("other");
   const [rating, setRating] = useState<number | null>(null);
   const [website, setWebsite] = useState("");
+  const [interactive, setInteractive] = useState(false);
   const sourcePage = useRef("/");
   const attempt = useRef<{ id: string; signature: string } | null>(null);
   function show() {
@@ -31,6 +32,10 @@ export function FeedbackButton() {
     sourcePage.current = window.location.pathname;
     setOpen(true);
   }
+  useEffect(() => {
+    // The server-rendered launcher must wait for React, or early clicks are lost.
+    setInteractive(true);
+  }, []);
   useEffect(() => {
     window.addEventListener("squid:feedback", show);
     return () => window.removeEventListener("squid:feedback", show);
@@ -73,6 +78,7 @@ export function FeedbackButton() {
         type="button"
         className={`feedback-launcher ${pathname === "/dashboard" || pathname === "/demo" ? "feedback-above-nav" : ""} ${pathname.startsWith("/c/") || pathname.startsWith("/session/") ? "feedback-charging-page" : ""}`}
         onClick={show}
+        disabled={!interactive}
         aria-haspopup="dialog"
         title="Share feedback to help Squid grow"
       >

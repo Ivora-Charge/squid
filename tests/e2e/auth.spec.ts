@@ -210,3 +210,54 @@ test("anonymous callers cannot change passwords and hostile origins cannot start
     ).toBe(403);
   }
 });
+test("the sign-in form waits for its JavaScript before accepting input", async ({
+  page,
+}) => {
+  const submissions: unknown[] = [];
+  await page.route("**/auth/password", async (route) => {
+    submissions.push(route.request().postDataJSON());
+    await route.fulfill({
+      status: 401,
+      contentType: "application/json",
+      body: '{"error":"Email or password is incorrect."}',
+    });
+  });
+  let releaseScripts!: () => void;
+  const scriptsReady = new Promise<void>((resolve) => {
+    releaseScripts = resolve;
+  });
+  await page.route("**/_next/**/*.js", async (route) => {
+    await scriptsReady;
+    await route.continue();
+  });
+  const email = page.getByLabel("Email address", { exact: true });
+  const secret = page.getByLabel("Password", { exact: true });
+  const submit = page.getByRole("button", {
+    name: "Sign in to Squid",
+    exact: true,
+  });
+  try {
+    await page.goto("/login", { waitUntil: "commit" });
+    await expect(submit).toBeVisible();
+    await expect(email).toBeDisabled();
+    await expect(secret).toBeDisabled();
+    await expect(submit).toBeDisabled();
+    await expect(
+      page.getByRole("button", { name: "Continue with Google" }),
+    ).toBeDisabled();
+    await expect(
+      page.getByRole("button", { name: "Email me a sign-in link instead" }),
+    ).toBeDisabled();
+  } finally {
+    releaseScripts();
+  }
+  await expect(email).toBeEnabled();
+  await email.fill("host@example.com");
+  await secret.fill(password);
+  await submit.click();
+  await expect(page.getByRole("main").getByRole("alert")).toContainText(
+    "incorrect",
+  );
+  await expect(page).toHaveURL(`${origin}/login`);
+  expect(submissions).toEqual([{ email: "host@example.com", password }]);
+});
