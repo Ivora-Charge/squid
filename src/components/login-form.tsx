@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ArrowRight,
   Mail,
@@ -42,6 +42,12 @@ export function LoginForm({ initialError = "" }: { initialError?: string }) {
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState<"form" | "google" | null>(null);
   const [error, setError] = useState(initialError);
+  const [interactive, setInteractive] = useState(false);
+  useEffect(() => {
+    // Before React hydrates, the form would submit natively and lose input.
+    setInteractive(true);
+  }, []);
+  const locked = !!busy || !interactive;
   function switchMode(value: Mode) {
     setMode(value);
     setSent(false);
@@ -152,7 +158,7 @@ export function LoginForm({ initialError = "" }: { initialError?: string }) {
             <button
               type="button"
               aria-pressed={mode === "signin"}
-              disabled={!!busy}
+              disabled={locked}
               onClick={() => switchMode("signin")}
             >
               Sign in
@@ -160,7 +166,7 @@ export function LoginForm({ initialError = "" }: { initialError?: string }) {
             <button
               type="button"
               aria-pressed={mode === "signup"}
-              disabled={!!busy}
+              disabled={locked}
               onClick={() => switchMode("signup")}
             >
               Create an account
@@ -169,7 +175,7 @@ export function LoginForm({ initialError = "" }: { initialError?: string }) {
           <button
             type="button"
             className="button secondary full google-signin"
-            disabled={!!busy}
+            disabled={locked}
             onClick={google}
           >
             {busy === "google" ? (
@@ -189,7 +195,7 @@ export function LoginForm({ initialError = "" }: { initialError?: string }) {
           <button
             type="button"
             className="text-link"
-            disabled={!!busy}
+            disabled={locked}
             onClick={() => switchMode("signin")}
           >
             <ArrowLeft size={15} /> Back to sign in
@@ -221,7 +227,7 @@ export function LoginForm({ initialError = "" }: { initialError?: string }) {
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@yourhappyplace.com"
               autoComplete="email"
-              disabled={!!busy}
+              disabled={locked}
             />
           </div>
         </label>
@@ -245,13 +251,14 @@ export function LoginForm({ initialError = "" }: { initialError?: string }) {
                 autoComplete={
                   mode === "signup" ? "new-password" : "current-password"
                 }
-                disabled={!!busy}
+                disabled={locked}
               />
               <button
                 type="button"
                 className="password-toggle"
                 aria-label={showPassword ? "Hide password" : "Show password"}
                 aria-pressed={showPassword}
+                disabled={!interactive}
                 onClick={() => setShowPassword(!showPassword)}
               >
                 {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
@@ -263,14 +270,14 @@ export function LoginForm({ initialError = "" }: { initialError?: string }) {
           <button
             type="button"
             className="text-link forgot-password"
-            disabled={!!busy}
+            disabled={locked}
             onClick={() => switchMode("recover")}
           >
             Forgot password?
           </button>
         )}
         <ErrorMessage message={error} />
-        <button type="submit" className="button primary full" disabled={!!busy}>
+        <button type="submit" className="button primary full" disabled={locked}>
           {busy === "form" ? (
             <Busy />
           ) : (
@@ -284,7 +291,7 @@ export function LoginForm({ initialError = "" }: { initialError?: string }) {
         <button
           type="button"
           className="text-link auth-link-option"
-          disabled={!!busy}
+          disabled={locked}
           onClick={() => switchMode("link")}
         >
           Email me a sign-in link instead

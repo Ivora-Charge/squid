@@ -259,6 +259,47 @@ test("charger onboarding waits for JavaScript before accepting a click", async (
     page.getByRole("heading", { name: "Tell us about your place." }),
   ).toBeVisible();
 });
+test("dashboard controls wait for JavaScript before accepting a click", async ({
+  page,
+  isMobile,
+}) => {
+  let releaseScripts!: () => void;
+  const scriptsReady = new Promise<void>((resolve) => {
+    releaseScripts = resolve;
+  });
+  await page.route("**/_next/**/*.js", async (route) => {
+    await scriptsReady;
+    await route.continue();
+  });
+  const sticker = page
+    .getByRole("button", { name: "QR sticker", exact: true })
+    .first();
+  const charger = page
+    .getByRole("button", { name: "The Weekender", exact: true })
+    .first();
+  const nav = page
+    .locator(isMobile ? ".mobile-nav" : ".sidebar")
+    .getByRole("button", {
+      name: isMobile ? "Earnings" : "Earnings & payouts",
+      exact: true,
+    });
+  try {
+    await page.goto("/demo", { waitUntil: "commit" });
+    await expect(sticker).toBeVisible();
+    await expect(sticker).toBeDisabled();
+    await expect(charger).toBeDisabled();
+    await expect(nav).toBeDisabled();
+  } finally {
+    releaseScripts();
+  }
+  await expect(sticker).toBeEnabled();
+  await sticker.click();
+  await expect(
+    page.getByRole("img", {
+      name: "Printable Squid QR sticker for The Weekender",
+    }),
+  ).toBeVisible();
+});
 test("host can add a demo charger and filter it", async ({
   page,
   isMobile,
