@@ -1,5 +1,9 @@
 import Link from "next/link";
 import { Brand } from "@/components/ui";
+// Version 2 raised Squid's fee for new hosts from 6% to 10%. The operator must
+// replace the placeholder with the date the fee migration is applied.
+const TERMS_VERSION = 2;
+const EFFECTIVE_DATE = "[EFFECTIVE DATE]";
 export default function Terms() {
   return (
     <div className="docs-layout">
@@ -10,6 +14,9 @@ export default function Terms() {
       <main id="main" className="docs-content">
         <p className="eyebrow">THE SMALL PRINT</p>
         <h1>Charging, with clarity.</h1>
+        <p className="fine-print">
+          Version {TERMS_VERSION} · Effective {EFFECTIVE_DATE}
+        </p>
         <p>
           This is the Squid reference application. The demo is a simulation and
           never collects a payment. A deployed instance is operated by the party
@@ -33,14 +40,23 @@ export default function Terms() {
         </p>
         <h2>Host earnings</h2>
         <p>
-          Squid’s fee is 6% of the final transaction amount, rounded to the
-          nearest cent. Stripe’s card processing fee (currently 2.9% plus $0.30
-          per transaction for standard US cards) is charged directly to the
-          host’s connected Stripe account. The charging payment is made on that
+          Squid’s fee is a percentage of the final transaction amount, rounded
+          half up to the nearest cent. Hosts whose Squid account is created on
+          or after {EFFECTIVE_DATE} pay 10%. Hosts whose account existed before
+          that date keep their 6% fee. Each charging session uses its host’s
+          rate at the time the guest starts checkout, and that rate also applies
+          to any refund of that session. Each host’s dashboard shows their own
+          rate. Stripe’s card processing fee (currently 2.9% plus $0.30 per
+          transaction for standard US cards) is charged directly to the host’s
+          connected Stripe account. The charging payment is made on that
           account, and Squid receives its fee separately. Bank payouts follow
           Stripe’s account requirements and payout schedule. A full refund also
           returns Squid’s fee; Stripe’s original processing fee may not be
           returned.
+        </p>
+        <p>
+          Version 1 of these terms applied a 6% fee to every host. It continues
+          to apply to sessions started before {EFFECTIVE_DATE}.
         </p>
         <h2>Address search</h2>
         <p>

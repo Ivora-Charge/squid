@@ -4,6 +4,11 @@ import { appUrl, required } from "./config";
 import { checked, db, withLock } from "./db";
 import { durable, forget } from "./ivora";
 import { HttpError } from "./security";
+import {
+  feeRate,
+  NEW_HOST_FEE_BASIS_POINTS,
+  type FeeBasisPoints,
+} from "../money";
 
 function connectFailure(stage: "account" | "link", error: unknown): never {
   if (error instanceof Stripe.errors.StripeError) {
@@ -44,6 +49,18 @@ export async function hostAccount(hostId: string) {
   if (error)
     throw new Error("Database setup is incomplete. Apply the Squid migration.");
   return data?.stripe_account_id as string | undefined;
+}
+// The host's Squid fee rate. A host without a saved row has not started payout
+// setup yet; the database creates their row at the new-host rate.
+export async function hostFeeRate(hostId: string): Promise<FeeBasisPoints> {
+  const { data, error } = await db()
+    .from("squid_hosts")
+    .select("fee_basis_points")
+    .eq("id", hostId)
+    .maybeSingle();
+  if (error)
+    throw new Error("Database setup is incomplete. Apply the Squid migration.");
+  return data ? feeRate(data.fee_basis_points) : NEW_HOST_FEE_BASIS_POINTS;
 }
 export function isDirectAccount(account: Stripe.Account) {
   return (

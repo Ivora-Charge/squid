@@ -3,7 +3,7 @@ import { browserId } from "@/lib/browser-id";
 import { useState } from "react";
 import { ArrowRight, ArrowLeft, MapPin, Plug, Zap, Check } from "lucide-react";
 import { Busy, ErrorMessage, Modal, post } from "./ui";
-import { money, splitPayment } from "@/lib/money";
+import { feePercent, money, splitPayment } from "@/lib/money";
 import type { Property } from "@/lib/types";
 import { AddressSearch } from "./address-search";
 import {
@@ -13,10 +13,12 @@ import {
 } from "@/lib/onboarding";
 export function AddCharger({
   demo,
+  feeBasisPoints,
   onClose,
   onAdd,
 }: {
   demo: boolean;
+  feeBasisPoints: number;
   onClose: () => void;
   onAdd: (property: Property) => void;
 }) {
@@ -40,7 +42,9 @@ export function AddCharger({
   const exampleTotal = Math.round(Number(form.rate) * 2000);
   const example = splitPayment(
     Number.isSafeInteger(exampleTotal) && exampleTotal >= 0 ? exampleTotal : 0,
+    feeBasisPoints,
   );
+  const fee = feePercent(feeBasisPoints);
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setError("");
@@ -227,7 +231,7 @@ export function AddCharger({
                 <strong>{money(example.total)}</strong>
               </p>
               <p>
-                <span>Squid fee · 6%</span>
+                <span>Squid fee · {fee}</span>
                 <span>{money(example.fee)}</span>
               </p>
               <p>
@@ -241,8 +245,8 @@ export function AddCharger({
             </div>
             <p className="fine-print">
               A $25 temporary hold is released down to the final charging cost.
-              Guests pay your Stripe account directly. Squid takes only its 6%
-              fee; Stripe charges processing to your account.
+              Guests pay your Stripe account directly. Squid takes only its{" "}
+              {fee} fee; Stripe charges processing to your account.
             </p>
             {demo && (
               <div className="notice">

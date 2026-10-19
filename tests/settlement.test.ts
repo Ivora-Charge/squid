@@ -5,6 +5,12 @@ const mock = vi.hoisted(() => ({
   mode: "direct" as "direct" | "destination",
   actualStripeFee: null as number | null,
   session: {} as ChargeSession,
+  // The host's current rate, which may differ from a session's snapshot.
+  hostRate: 1000,
+  // When set, the property lookup returns this row and the first request
+  // lookup finds no prior session, so checkout inserts a new one.
+  property: null as Record<string, unknown> | null,
+  inserted: null as Record<string, unknown> | null,
   checkout: {
     id: "cs_test",
     payment_intent: "pi_test" as string | null,
@@ -71,7 +77,18 @@ vi.mock("@/lib/server/db", () => ({
           values = v;
           return q;
         },
-        maybeSingle: async () => ({ data: mock.session, error: null }),
+        insert: (v: Partial<ChargeSession>) => {
+          mock.inserted = v;
+          Object.assign(mock.session, v);
+          return q;
+        },
+        maybeSingle: async () => {
+          if (mock.property && table === "squid_properties")
+            return { data: mock.property, error: null };
+          if (mock.property && table === "squid_sessions" && !mock.inserted)
+            return { data: null, error: null };
+          return { data: mock.session, error: null };
+        },
         single: async () => ({
           data:
             table === "squid_sessions"
@@ -114,6 +131,7 @@ vi.mock("@/lib/server/stripe", () => ({
     },
   }),
   payoutStatus: async () => ({ id: "acct_host", ready: true }),
+  hostFeeRate: async () => mock.hostRate,
   paymentOptions: async () =>
     mock.mode === "direct" ? { stripeAccount: "acct_host" } : {},
 }));
@@ -127,7 +145,10 @@ vi.mock("@/lib/server/ivora", async (importOriginal) => {
       run: () => Promise<unknown>,
     ) => run(),
     getExternal: async () => structuredClone(mock.external),
-    getStation: async () => ({ online: true }),
+    getStation: async () => ({
+      online: true,
+      connectors: [{ id: 2, status: "Available" }],
+    }),
     operation: mock.operation,
     writeIvora: mock.write,
   };
@@ -137,6 +158,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   mock.mode = "direct";
   mock.actualStripeFee = null;
+  mock.hostRate = 1000;
+  mock.property = null;
+  mock.inserted = null;
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-09-23T11:00:00Z"));
   Object.assign(mock.checkout, {
@@ -153,6 +177,7 @@ beforeEach(() => {
     status: "charging",
     rate_cents: 35,
     hold_cents: 2500,
+    fee_basis_points: 600,
     tariff_id: 3,
     stripe_checkout_id: "cs_test",
     stripe_payment_id: "pi_test",
@@ -196,7 +221,10 @@ beforeEach(() => {
                     type: "stripe_fee",
                     amount:
                       mock.actualStripeFee ??
-                      processingFee(mock.pi.amount_received),
+                      processingFee(
+                        mock.pi.amount_received,
+                        mock.session.fee_basis_points,
+                      ),
                   },
                   {
                     type: "application_fee",
@@ -712,5 +740,176 @@ describe("external-funded charging settlement", () => {
       },
       { idempotencyKey: "session-one:refund" },
     );
+  });
+});
+describe("per-session Squid fee rate", () => {
+  function finalBill(total: number) {
+    Object.assign(mock.external, {
+      status: "completed",
+      usage: null,
+      bill: {
+        id: "bill_one",
+        status: "final",
+        total_minor: total,
+        energy_kwh: "6.941",
+        transaction_id: 10,
+      },
+    });
+  }
+  it.each([
+    [600, 600],
+    [1000, 1000],
+  ])(
+    "snapshots a %i basis point host rate on a new session at checkout",
+    async (rate, expected) => {
+      mock.hostRate = rate;
+      mock.property = {
+        id: "property",
+        host_id: "host",
+        slug: "weekender",
+        published: true,
+        name: "The Weekender",
+        rate_cents: 35,
+        hold_cents: 2500,
+        tariff_id: 3,
+        station_id: 1,
+        connector_id: 2,
+      };
+      await createCheckout("weekender", "request-new");
+      expect(mock.inserted).toMatchObject({
+        host_id: "host",
+        fee_basis_points: expected,
+      });
+    },
+  );
+  it("captures a new host's session with its 10% snapshot", async () => {
+    mock.session.fee_basis_points = 1000;
+    finalBill(243);
+    await reconcile("session-one");
+    expect(mock.capture).toHaveBeenCalledWith(
+      "pi_test",
+      { amount_to_capture: 243, application_fee_amount: 24 },
+      { stripeAccount: "acct_host", idempotencyKey: "session-one:capture" },
+    );
+    expect(mock.session).toMatchObject({
+      status: "completed",
+      total_cents: 243,
+      fee_cents: 24,
+      stripe_fee_cents: 37,
+    });
+  });
+  it("keeps a 6% session at 6% whatever its host's current rate", async () => {
+    mock.hostRate = 1000;
+    finalBill(1000);
+    await reconcile("session-one");
+    expect(mock.capture.mock.calls[0][1]).toEqual({
+      amount_to_capture: 1000,
+      application_fee_amount: 60,
+    });
+    expect(mock.session).toMatchObject({ status: "completed", fee_cents: 60 });
+  });
+  it("accepts an already captured 6% payment without a mismatch", async () => {
+    finalBill(243);
+    Object.assign(mock.pi, {
+      status: "succeeded",
+      amount_received: 243,
+      application_fee_amount: 15,
+    });
+    await reconcile("session-one");
+    expect(mock.session).toMatchObject({ status: "completed", fee_cents: 15 });
+    expect(mock.capture).not.toHaveBeenCalled();
+  });
+  it("accepts an already captured 10% payment without a mismatch", async () => {
+    mock.session.fee_basis_points = 1000;
+    finalBill(243);
+    Object.assign(mock.pi, {
+      status: "succeeded",
+      amount_received: 243,
+      application_fee_amount: 24,
+    });
+    await reconcile("session-one");
+    expect(mock.session).toMatchObject({ status: "completed", fee_cents: 24 });
+  });
+  it.each([
+    [600, 24],
+    [1000, 15],
+  ])(
+    "sends a %i basis point session to review when Stripe collected %i cents",
+    async (rate, collected) => {
+      mock.session.fee_basis_points = rate;
+      finalBill(243);
+      Object.assign(mock.pi, {
+        status: "succeeded",
+        amount_received: 243,
+        application_fee_amount: collected,
+      });
+      await reconcile("session-one");
+      expect(mock.session.status).toBe("review");
+      expect(mock.session.fee_cents).toBeNull();
+    },
+  );
+  it("captures a 10% session exactly at the minimum", async () => {
+    mock.session.fee_basis_points = 1000;
+    finalBill(50);
+    await reconcile("session-one");
+    expect(mock.capture.mock.calls[0][1]).toEqual({
+      amount_to_capture: 50,
+      application_fee_amount: 5,
+    });
+    expect(mock.session).toMatchObject({
+      status: "completed",
+      fee_cents: 5,
+      stripe_fee_cents: 31,
+    });
+  });
+  it("waives a 10% session below the minimum", async () => {
+    mock.session.fee_basis_points = 1000;
+    finalBill(49);
+    await reconcile("session-one");
+    expect(mock.capture).not.toHaveBeenCalled();
+    expect(mock.session).toMatchObject({
+      status: "completed",
+      total_cents: 0,
+      fee_cents: 0,
+      stripe_fee_cents: 0,
+    });
+  });
+  it("adds processing to a legacy destination charge at the snapshotted rate", async () => {
+    mock.mode = "destination";
+    mock.pi.transfer_data = { destination: "acct_host" };
+    mock.session.fee_basis_points = 1000;
+    finalBill(243);
+    await reconcile("session-one");
+    expect(mock.capture.mock.calls[0][1]).toEqual({
+      amount_to_capture: 243,
+      application_fee_amount: 61,
+    });
+  });
+  it("refunds a 10% session's whole fee and keeps its recorded rate", async () => {
+    Object.assign(mock.session, {
+      status: "completed",
+      refund_requested: true,
+      total_cents: 243,
+      fee_cents: 24,
+      fee_basis_points: 1000,
+    });
+    mock.hostRate = 600;
+    mock.pi.status = "succeeded";
+    await reconcile("session-one");
+    expect(mock.refund).toHaveBeenCalledWith(
+      { payment_intent: "pi_test", refund_application_fee: true },
+      { stripeAccount: "acct_host", idempotencyKey: "session-one:refund" },
+    );
+    expect(mock.session).toMatchObject({
+      status: "refunded",
+      fee_cents: 24,
+      fee_basis_points: 1000,
+    });
+  });
+  it("sends a session with an unknown rate to an error instead of guessing", async () => {
+    (mock.session as { fee_basis_points: unknown }).fee_basis_points = null;
+    finalBill(243);
+    await expect(reconcile("session-one")).rejects.toThrow(/fee rate/);
+    expect(mock.capture).not.toHaveBeenCalled();
   });
 });
