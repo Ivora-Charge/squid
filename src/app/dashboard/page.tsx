@@ -3,8 +3,9 @@ import Link from "next/link";
 import { Dashboard } from "@/components/dashboard";
 import { Brand } from "@/components/ui";
 import { db, user } from "@/lib/server/db";
-import { supabaseConfigured } from "@/lib/server/config";
-import { payoutStatus } from "@/lib/server/stripe";
+import { newHostFeeEffectiveAt, supabaseConfigured } from "@/lib/server/config";
+import { formatEffectiveAt } from "@/lib/money";
+import { hostFeeRate, payoutStatus } from "@/lib/server/stripe";
 import { getStation } from "@/lib/server/ivora";
 import { chargerStatus, type ChargerStatus } from "@/lib/status";
 import { withConnectionUrl } from "@/lib/server/properties";
@@ -23,7 +24,10 @@ export default async function DashboardPage() {
   });
   if (!context) redirect("/admin?access=ended");
   const { host, actingAs } = context;
-  const [properties, sessions] = await Promise.all([
+  // An invalid NEW_HOST_FEE_EFFECTIVE_AT is a configuration error, not a
+  // missing migration, so it must not fall through to the setup page below.
+  const feeEffectiveAt = formatEffectiveAt(newHostFeeEffectiveAt());
+  const [properties, sessions, feeBasisPoints] = await Promise.all([
     db()
       .from("squid_properties")
       .select("*")
@@ -37,8 +41,10 @@ export default async function DashboardPage() {
       .eq("host_id", host.id)
       .order("created_at", { ascending: false })
       .limit(500),
+    // A missing rate means the fee migration is not applied yet; never guess.
+    hostFeeRate(host.id).catch(() => null),
   ]);
-  if (properties.error || sessions.error)
+  if (properties.error || sessions.error || feeBasisPoints === null)
     return (
       <main id="main" className="setup-page">
         <Brand />
@@ -78,6 +84,8 @@ export default async function DashboardPage() {
       initial={{
         properties: (properties.data as Property[]).map(withConnectionUrl),
         sessions: sessions.data as HostSession[],
+        feeBasisPoints,
+        feeEffectiveAt,
         email: host.email ?? "Host",
         payoutsReady: account.ready,
         stripeConnected: Boolean(account.id),

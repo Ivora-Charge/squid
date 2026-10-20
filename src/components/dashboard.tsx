@@ -47,7 +47,12 @@ import { TenantAccessBanner } from "./tenant-access-banner";
 import { AddCharger } from "./add-charger";
 import { QRSticker } from "./qr-sticker";
 import { CityPhoto } from "./city-photo";
-import { money } from "@/lib/money";
+import {
+  feePercent,
+  LEGACY_FEE_BASIS_POINTS,
+  money,
+  splitPayment,
+} from "@/lib/money";
 import type { DashboardData, HostSession, Property } from "@/lib/types";
 import { NEWSLETTER_CONSENT, type NewsletterConsent } from "@/lib/newsletter";
 import type { ChargerStatus } from "@/lib/status";
@@ -72,6 +77,8 @@ export function Dashboard({
   const router = useRouter();
   const [ready, setReady] = useState(false);
   const [data, setData] = useState(initial);
+  // A $10.00 session at this host's own rate.
+  const feeExample = splitPayment(1000, data.feeBasisPoints);
   const [tab, setTab] = useState<Tab>("overview");
   const [days, setDays] = useState(30);
   const [search, setSearch] = useState("");
@@ -859,13 +866,22 @@ export function Dashboard({
                 <section className="panel payout-explainer">
                   <CreditCard size={28} />
                   <div>
-                    <h2>A 6% Squid fee. Stripe’s fee at cost.</h2>
+                    <h2>
+                      A {feePercent(data.feeBasisPoints)} Squid fee. Stripe’s
+                      fee at cost.
+                    </h2>
                     <p>
-                      For every $10.00 charging session, Squid keeps $0.60 and
-                      Stripe’s card processing fee of $0.59 (2.9% + 30¢) is
-                      deducted from your connected Stripe account, leaving
-                      $8.81. Stripe bills its processing fee directly; Squid
-                      adds nothing on top.
+                      For every {money(feeExample.total)} charging session,
+                      Squid keeps {money(feeExample.fee)} and Stripe’s card
+                      processing fee of {money(feeExample.processing)} (2.9% +
+                      30¢) is deducted from your connected Stripe account,
+                      leaving {money(feeExample.host)}. Stripe bills its
+                      processing fee directly; Squid adds nothing on top.
+                    </p>
+                    <p>
+                      {data.feeBasisPoints === LEGACY_FEE_BASIS_POINTS
+                        ? `Your Squid account was created before ${data.feeEffectiveAt}, so you keep the ${feePercent(data.feeBasisPoints)} fee.`
+                        : `Squid accounts created on or after ${data.feeEffectiveAt} pay a ${feePercent(data.feeBasisPoints)} fee.`}
                     </p>
                     <p>
                       The charging payment lands in your Stripe balance after
@@ -933,8 +949,9 @@ export function Dashboard({
                     </div>
                     <p>
                       Connect your Stripe account to receive your share of each
-                      charging payment directly, after Squid’s 6% fee and
-                      Stripe’s processing fee.
+                      charging payment directly, after Squid’s{" "}
+                      {feePercent(data.feeBasisPoints)} fee and Stripe’s
+                      processing fee.
                     </p>
                     <div className="stripe-wordmark">
                       stripe <span>CONNECT</span>
@@ -1065,7 +1082,12 @@ export function Dashboard({
         </button>
       </nav>
       {add && (
-        <AddCharger demo={demo} onClose={() => setAdd(false)} onAdd={added} />
+        <AddCharger
+          demo={demo}
+          feeBasisPoints={data.feeBasisPoints}
+          onClose={() => setAdd(false)}
+          onAdd={added}
+        />
       )}{" "}
       {sticker && (
         <QRSticker

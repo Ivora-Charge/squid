@@ -52,6 +52,8 @@ export type ChargeSession = {
   status: ChargeStatus;
   rate_cents: number;
   hold_cents: number;
+  // Squid's fee rate snapshotted at checkout, in basis points.
+  fee_basis_points: number;
   tariff_id: number;
   stripe_checkout_id: string | null;
   stripe_payment_id: string | null;
@@ -99,6 +101,10 @@ export type HostSession = Pick<
   | "ended_at"
 >;
 export type DashboardData = {
+  // The host's own Squid fee rate, in basis points.
+  feeBasisPoints: number;
+  // When new accounts start paying 10%, formatted with its timezone.
+  feeEffectiveAt: string;
   properties: Property[];
   sessions: HostSession[];
   email: string;

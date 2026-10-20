@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   retrieve: vi.fn(),
   link: vi.fn(),
   upsert: vi.fn(),
+  accountCreatedAt: "2026-09-01T00:00:00Z",
   durable: vi.fn(),
   forget: vi.fn(),
   owned: vi.fn(),
@@ -34,8 +35,19 @@ vi.mock("@/lib/server/ivora", () => ({
 vi.mock("@/lib/server/db", () => ({
   user: mocks.user,
   db: () => ({
+    auth: {
+      admin: {
+        getUserById: async (id: string) => ({
+          data: { user: { id, created_at: mocks.accountCreatedAt } },
+          error: null,
+        }),
+      },
+    },
     from: () => ({
       upsert: mocks.upsert,
+      update: () => ({
+        eq: () => ({ neq: async () => ({ data: null, error: null }) }),
+      }),
       select: () => ({
         eq: () => ({
           maybeSingle: async () => ({
@@ -56,6 +68,7 @@ import { HttpError } from "@/lib/server/security";
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.accountId = "acct_test";
+  mocks.accountCreatedAt = "2026-09-01T00:00:00Z";
   mocks.create.mockResolvedValue({ id: "acct_new" });
   mocks.retrieve.mockResolvedValue({
     charges_enabled: true,
@@ -163,9 +176,11 @@ it("creates an Accounts v2 Express merchant with Stripe-managed risk", async () 
     expect.any(Function),
     true,
   );
+  // The account predates the new-host fee, so payout setup records 6%.
   expect(mocks.upsert).toHaveBeenCalledWith({
     id: host,
     stripe_account_id: "acct_new",
+    fee_basis_points: 600,
   });
   expect(mocks.link).toHaveBeenCalledWith(
     expect.objectContaining({ account: "acct_new" }),
@@ -199,6 +214,17 @@ it("replaces a legacy liability account when its host reconnects", async () => {
   expect(mocks.upsert).toHaveBeenCalledWith({
     id: host,
     stripe_account_id: "acct_new",
+    fee_basis_points: 600,
+  });
+});
+it("records 10% at payout setup for an account created on or after the effective date", async () => {
+  mocks.accountId = undefined;
+  mocks.accountCreatedAt = "2026-11-01T00:00:00Z";
+  expect((await POST(request({ propertyId: property }))).status).toBe(200);
+  expect(mocks.upsert).toHaveBeenCalledWith({
+    id: host,
+    stripe_account_id: "acct_new",
+    fee_basis_points: 1000,
   });
 });
 it("returns a useful error without exposing Stripe's response details", async () => {

@@ -58,7 +58,7 @@ export default function Home() {
                 <Check size={15} /> No monthly subscription
               </span>
               <span>
-                <Check size={15} /> Just a 6% Squid fee
+                <Check size={15} /> Just a 10% Squid fee
               </span>
             </div>
             <Link className="text-link hero-demo" href="/demo">

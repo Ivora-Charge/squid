@@ -1,9 +1,10 @@
 import "server-only";
 import Stripe from "stripe";
-import { appUrl, required } from "./config";
+import { appUrl, newHostFeeEffectiveAt, required } from "./config";
 import { checked, db, withLock } from "./db";
 import { durable, forget } from "./ivora";
 import { HttpError } from "./security";
+import { hostRateFor, type FeeBasisPoints } from "../money";
 
 function connectFailure(stage: "account" | "link", error: unknown): never {
   if (error instanceof Stripe.errors.StripeError) {
@@ -44,6 +45,25 @@ export async function hostAccount(hostId: string) {
   if (error)
     throw new Error("Database setup is incomplete. Apply the Squid migration.");
   return data?.stripe_account_id as string | undefined;
+}
+// The host's Squid fee rate follows only from when their Squid account was
+// created, compared with NEW_HOST_FEE_EFFECTIVE_AT. It does not depend on when
+// migrations ran or whether the host has a squid_hosts row yet. The stored
+// squid_hosts.fee_basis_points is kept in step as a record; it is never read
+// to decide the rate.
+export async function hostFeeRate(hostId: string): Promise<FeeBasisPoints> {
+  const { data, error } = await db().auth.admin.getUserById(hostId);
+  if (error || !data.user || data.user.id !== hostId)
+    throw new Error("Could not load the host account to set Squid's fee.");
+  const rate = hostRateFor(data.user.created_at, newHostFeeEffectiveAt());
+  const { error: saved } = await db()
+    .from("squid_hosts")
+    .update({ fee_basis_points: rate })
+    .eq("id", hostId)
+    .neq("fee_basis_points", rate);
+  if (saved)
+    throw new Error("Database setup is incomplete. Apply the Squid migration.");
+  return rate;
 }
 export function isDirectAccount(account: Stripe.Account) {
   return (
@@ -134,10 +154,13 @@ export async function onboarding(
         connectFailure("account", error);
       }
       id = account.id;
+      const rate = await hostFeeRate(hostId);
       checked(
-        await db()
-          .from("squid_hosts")
-          .upsert({ id: hostId, stripe_account_id: id }),
+        await db().from("squid_hosts").upsert({
+          id: hostId,
+          stripe_account_id: id,
+          fee_basis_points: rate,
+        }),
       );
     }
     const returnUrl = `${origin}/dashboard?${propertyId ? `setup=${encodeURIComponent(propertyId)}` : "tab=settings"}`;

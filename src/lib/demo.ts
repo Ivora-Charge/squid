@@ -1,3 +1,4 @@
+import { NEW_HOST_FEE_BASIS_POINTS, platformFee } from "./money";
 import type { DashboardData, Property } from "./types";
 export const demoProperties: Property[] = [
   {
@@ -52,11 +53,14 @@ export const demoProperties: Property[] = [
     created_at: "2026-09-01T00:00:00Z",
   },
 ];
-export function demoDashboard(): DashboardData {
+export function demoDashboard(feeEffectiveAt: string): DashboardData {
   const now = new Date();
   return {
     properties: demoProperties,
     email: "alex@example.com",
+    // The demo shows the rate a host joining today receives.
+    feeBasisPoints: NEW_HOST_FEE_BASIS_POINTS,
+    feeEffectiveAt,
     payoutsReady: true,
     stripeConnected: true,
     // One of each, so the demo shows how an offline charger looks.
@@ -74,7 +78,7 @@ export function demoDashboard(): DashboardData {
         rate_cents: property.rate_cents,
         energy_kwh: Number((total / property.rate_cents).toFixed(2)),
         total_cents: total,
-        fee_cents: Math.round(total * 0.06),
+        fee_cents: platformFee(total, NEW_HOST_FEE_BASIS_POINTS),
         stripe_fee_cents: Math.round(total * 0.029) + 30,
         created_at: created,
         started_at: created,

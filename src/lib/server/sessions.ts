@@ -6,6 +6,7 @@ import type { ChargeSession, Property, PublicSession } from "../types";
 import {
   applicationFee,
   captureAmount,
+  feeRate,
   platformFee,
   processingFee,
   MINIMUM_CHARGE_CENTS,
@@ -13,7 +14,7 @@ import {
 import { checked, db, LockBusyError, withLock } from "./db";
 import { appUrl } from "./config";
 import { HttpError } from "./security";
-import { stripe, payoutStatus, paymentOptions } from "./stripe";
+import { stripe, payoutStatus, paymentOptions, hostFeeRate } from "./stripe";
 import {
   billSchema,
   durable,
@@ -169,7 +170,10 @@ export async function createCheckout(
       throw new Error(
         "This charger’s price is being updated. Please try again in a moment.",
       );
-    const account = await payoutStatus(p.host_id);
+    const [account, rate] = await Promise.all([
+      payoutStatus(p.host_id),
+      hostFeeRate(p.host_id),
+    ]);
     if (!account.ready || !account.id)
       throw new Error(
         "Connect Stripe and finish payout onboarding before taking payments.",
@@ -195,6 +199,8 @@ export async function createCheckout(
         stripe_account_id: account.id,
         rate_cents: p.rate_cents,
         hold_cents: p.hold_cents,
+        // Snapshot the host's rate: later rate changes never alter a session.
+        fee_basis_points: rate,
         tariff_id: p.tariff_id,
       })
       .select("*")
@@ -619,6 +625,8 @@ export async function reconcile(id: string): Promise<ChargeSession> {
       // Keep Ivora's immutable bill intact. Squid waives amounts below Stripe's
       // USD minimum instead of charging guests more than their metered usage.
       const charged = total < MINIMUM_CHARGE_CENTS ? 0 : total;
+      // Fees, the capture check and refunds all use the session's own rate.
+      const rate = feeRate(s.fee_basis_points);
       if (charged === 0) {
         if (pi.status !== "requires_capture") {
           await update(id, {
@@ -638,7 +646,12 @@ export async function reconcile(id: string): Promise<ChargeSession> {
       } else {
         if (pi.status === "requires_capture") {
           const key = `${id}:capture`;
-          const input = captureAmount(total, pi.amount_capturable, direct);
+          const input = captureAmount(
+            total,
+            pi.amount_capturable,
+            rate,
+            direct,
+          );
           await durable(
             key,
             input,
@@ -658,7 +671,7 @@ export async function reconcile(id: string): Promise<ChargeSession> {
         if (
           pi.status !== "succeeded" ||
           pi.amount_received !== total ||
-          pi.application_fee_amount !== applicationFee(total, direct)
+          pi.application_fee_amount !== applicationFee(total, rate, direct)
         ) {
           await update(id, { status: "review" });
           return loadSession(id);
@@ -668,13 +681,13 @@ export async function reconcile(id: string): Promise<ChargeSession> {
       await update(id, {
         status: "completed",
         total_cents: charged,
-        fee_cents: platformFee(charged),
+        fee_cents: platformFee(charged, rate),
         stripe_fee_cents:
           charged === 0
             ? 0
             : direct
               ? directStripeFee(pi)
-              : processingFee(charged),
+              : processingFee(charged, rate),
         energy_kwh: Number(bill.energy_kwh ?? 0),
         checkout_url: null,
         last_error: null,

@@ -169,6 +169,7 @@ beforeEach(() => {
     status: "charging",
     rate_cents: 35,
     hold_cents: 2500,
+    fee_basis_points: 600,
     tariff_id: 3,
     stripe_checkout_id: "cs_test",
     stripe_payment_id: "pi_test",
