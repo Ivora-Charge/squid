@@ -15,7 +15,7 @@ sequenceDiagram
     P->>S: Signed connected-account Checkout webhook
     S->>P: Retrieve and validate host PaymentIntent
     S->>I: Create external-funded session and start
-    loop Guest polling or scheduled reconciliation
+    loop Webhook, stale-snapshot fallback, or scheduled reconciliation
         S->>I: Retrieve matched physical usage
         S->>D: Save observed state
     end
@@ -67,7 +67,7 @@ Saved start and stop operations are observed instead of replaced. Unknown outcom
 
 ## Scheduling
 
-Guest pages poll while open. A protected cron route also reconciles up to ten sessions per minute, including abandoned Checkout sessions and pending refunds. Failed and pending entries rotate by update time so an outage cannot monopolize the batch. Locks prevent duplicate work; skipped work is retried in a later invocation.
+Guest pages poll `GET /api/sessions/[id]`, which reads the stored snapshot. Webhooks drive state; a snapshot older than `SESSION_SYNC_WINDOW_SECONDS` triggers at most one fallback reconcile per window (claimed by a conditional `updated_at` update), and stop requests reconcile immediately. A protected cron route also reconciles up to ten sessions per minute, including abandoned Checkout sessions and pending refunds. Failed and pending entries rotate by update time so an outage cannot monopolize the batch. Locks prevent duplicate work; skipped work is retried in a later invocation.
 
 Open, unpaid Checkout sessions expire through reconciliation after 30 minutes. Squid verifies expiration with Stripe before releasing the local reservation; a payment racing with expiration is reconciled on the next pass. Stripe's default 24-hour Checkout expiration remains a fallback if scheduling is unavailable.
 

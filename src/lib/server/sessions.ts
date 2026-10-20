@@ -11,7 +11,7 @@ import {
   processingFee,
   MINIMUM_CHARGE_CENTS,
 } from "../money";
-import { checked, db, withLock } from "./db";
+import { checked, db, LockBusyError, withLock } from "./db";
 import { appUrl } from "./config";
 import { HttpError } from "./security";
 import { stripe, payoutStatus, paymentOptions, hostFeeRate } from "./stripe";
@@ -277,6 +277,42 @@ function hasCompletedBill(external: ExternalSession) {
         external.bill.transaction_id === external.usage.transaction_id
       : external.status === "completed")
   );
+}
+// Guest pages read the stored snapshot. Ivora is consulted only when the
+// snapshot is older than this window (webhooks and the cron normally keep it
+// fresher). Configurable, clamped to a safe range.
+export function syncWindowMs(): number {
+  const seconds = Number(process.env.SESSION_SYNC_WINDOW_SECONDS);
+  return (
+    (Number.isFinite(seconds) && seconds > 0
+      ? Math.min(Math.max(seconds, 15), 300)
+      : 45) * 1000
+  );
+}
+// Fallback sync for missed or late webhooks. Claims the staleness window with a
+// conditional update, so at most one caller per window per session reaches
+// Ivora; everything else returns the stored snapshot. Payment work still runs
+// only inside reconcile, under its lock and durable keys.
+export async function syncIfStale(id: string): Promise<ChargeSession> {
+  const s = await loadSession(id);
+  if ((TERMINAL as readonly string[]).includes(s.status) && !s.refund_requested)
+    return s;
+  const now = Date.now();
+  const claimed = checked(
+    await db()
+      .from("squid_sessions")
+      .update({ updated_at: new Date(now).toISOString() })
+      .eq("id", id)
+      .lte("updated_at", new Date(now - syncWindowMs()).toISOString())
+      .select("id"),
+  );
+  if (!claimed?.length) return s;
+  try {
+    return await reconcile(id);
+  } catch (error) {
+    if (error instanceof LockBusyError) return loadSession(id);
+    throw error;
+  }
 }
 export async function reconcile(id: string): Promise<ChargeSession> {
   return withLock(`session:${id}`, async () => {

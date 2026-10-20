@@ -49,6 +49,7 @@ npm run dev
 | `STRIPE_SECRET_KEY`                                             | Squid's Stripe platform secret key. Start with test mode.                                         |
 | `STRIPE_WEBHOOK_SECRET`                                         | Signing secret for Squid's Stripe webhook endpoint. When unset, the webhook returns 503.          |
 | `STRIPE_CONNECT_WEBHOOK_SECRET`                                 | Signing secret for the connected-account webhook endpoint at the same URL.                        |
+| `SESSION_SYNC_WINDOW_SECONDS`                                   | Optional. Staleness window for the guest-page fallback sync, 15 to 300 seconds. Default 45.       |
 | `CRON_SECRET`                                                   | A random secret protecting scheduled reconciliation.                                              |
 | `NEWSLETTER_SENDING_ENABLED`                                    | Host newsletter sending. Off unless set to `true`; enable only after DKIM and DMARC are in place. |
 | `NEWSLETTER_FROM_EMAIL`                                         | Optional newsletter sender on your verified domain. Defaults to `RESEND_FROM_EMAIL`.              |
@@ -166,6 +167,18 @@ Apply `202610160001_newsletter.sql` before deploying this feature. The newslette
 
 When their variables are set, `src/instrumentation-client.ts` starts PostHog and Google Analytics 4 in the browser. Neither loads when its variable is empty, so local development and forks send nothing by default. PostHog captures pageviews, clicks, and session replays with every form input masked; the OCPP password field is also excluded with `ph-no-capture`. PostHog traffic goes through Squid's own origin at `/ingest` (rewritten in `next.config.ts`) so ad blockers do not drop it. Sign-in and password-reset pages carry one-use tokens in the URL fragment, so neither tool starts on those pages, and fragments are stripped from every URL PostHog records. Stripe Checkout runs on Stripe's domain and is not captured.
 
+### Session sync model and Ivora call budget
+
+Guest pages do not poll Ivora. `GET /api/sessions/[id]` returns the stored `squid_sessions` snapshot, so the page can poll Squid every 5 seconds at the cost of a database read. State moves forward in three ways:
+
+1. **Ivora webhooks** (`charging_session.status_changed`, `bill.finalized`) reconcile the matching session right after the signed, deduplicated acknowledgement. This is the main path.
+2. **Fallback sync.** When a guest poll finds a snapshot older than `SESSION_SYNC_WINDOW_SECONDS` (default 45), it claims the window with a conditional update of `updated_at` and reconciles once. Concurrent polls, tabs, and the old `sync` action see the claim already taken and return the stored snapshot, so there is at most one fallback sync per session per window. Any save to the session, from a webhook, the cron, or a sync, restarts the window.
+3. **Cron.** `/api/cron/reconcile` still reconciles up to ten open sessions every minute, which covers guests who closed the page.
+
+Explicit guest actions (stop) skip the window and reconcile at once. Capture, refunds, and the fee check still run only inside `reconcile`, under the session lock and durable idempotency keys, so a webhook and a fallback sync running together capture once.
+
+Each `reconcile` makes one or two Ivora reads (the charging session, plus a re-read after a start or stop). Rough budget per active session, with webhooks delivering: a few calls per status change, plus at most 60 / window ≈ 1 to 2 fallback reconciles a minute, and the cron adds at most one per minute. That is roughly 2 to 4 Ivora calls a minute for a session whose guest page is open, down from 10 or more, and independent of how many tabs are open. Without webhooks (previews, or a missed registration) the same fallback and the cron drive the session on their own, with state lagging by up to one window.
+
 ### Ivora webhooks
 
 Ivora pushes signed `charging_session.status_changed`, `bill.finalized`, and `operation.completed` events to `/api/ivora/webhook`, and while a subscription is active it observes started sessions itself about every 15 seconds. Squid verifies the `Ivora-Signature` HMAC, records each event id in `squid_ivora_events` so redeliveries are acknowledged once, and reconciles the affected session after acknowledging. Register the deployed endpoint once with `npm run ivora:webhook -- register https://<your-domain>/api/ivora/webhook`, store the printed `IVORA_WEBHOOK_SECRET` in that deployment, then confirm with `npm run ivora:webhook -- test <id>` and `deliveries <id>`. The every-minute reconciliation cron remains the safety net for missed deliveries and Stripe-side state.
@@ -209,7 +222,7 @@ In the Supabase project used by previews, add this wildcard to the Auth redirect
 https://*.squidcharge.dev/**
 ```
 
-Stripe webhooks are registered only for the main origin, so previews do not receive them. Vercel also does not run cron jobs on Preview deployments. A preview's guest Checkout completes through the existing reconciliation, which runs while the guest's session page polls; previews are for test-mode checks only.
+Stripe webhooks are registered only for the main origin, so previews do not receive them. Vercel also does not run cron jobs on Preview deployments. A preview's guest Checkout and charging session complete through the fallback sync, which runs while the guest's session page is open (each step can lag by up to `SESSION_SYNC_WINDOW_SECONDS`); previews are for test-mode checks only.
 
 ### Squid production
 
