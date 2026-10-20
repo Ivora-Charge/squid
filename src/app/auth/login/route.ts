@@ -18,11 +18,16 @@ export async function POST(request: NextRequest) {
       const { data, error } = await db().auth.admin.generateLink({
         type: "magiclink",
         email,
-        options: { redirectTo: `${appUrl()}/login/confirm` },
+        options: { redirectTo: `${appUrl(request)}/login/confirm` },
       });
       if (error || !data.properties?.hashed_token)
         throw new Error("Could not generate the sign-in link.");
-      await sendSignInEmail(email, data.properties.hashed_token);
+      await sendSignInEmail(
+        email,
+        data.properties.hashed_token,
+        "signin",
+        appUrl(request),
+      );
       return NextResponse.json(
         { ok: true },
         { headers: { "Cache-Control": "private, no-store" } },
@@ -32,7 +37,7 @@ export async function POST(request: NextRequest) {
       await auth()
     ).auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: `${appUrl()}/auth/callback` },
+      options: { emailRedirectTo: `${appUrl(request)}/auth/callback` },
     });
     if (error)
       return NextResponse.json(

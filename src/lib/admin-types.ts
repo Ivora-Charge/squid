@@ -44,3 +44,32 @@ export type AdminSummary = {
   new_feedback: number;
 };
 export type ActingAs = { id: string; email: string; expiresAt: string };
+export type NewsletterStatus = "draft" | "approved" | "sending" | "sent";
+export type NewsletterIssue = {
+  id: string;
+  title: string;
+  body: string;
+  status: NewsletterStatus;
+  created_at: string;
+  updated_at: string;
+  test_sent_at: string | null;
+  approved_at: string | null;
+  send_started_at: string | null;
+  sent_at: string | null;
+  recipients: number;
+  sent: number;
+  bounced: number;
+  unsubscribed: number;
+  clicks: number;
+};
+export type NewsletterOverview = {
+  audience: number;
+  issues: NewsletterIssue[];
+  sending: { enabled: boolean; missing: string[] };
+};
+export type NewsletterPreview = {
+  subject: string;
+  html: string;
+  text: string;
+  hash: string;
+};

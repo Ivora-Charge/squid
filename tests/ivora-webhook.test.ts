@@ -134,6 +134,23 @@ describe("Ivora webhook", () => {
     expect(operation.status).toBe(200);
     expect(mocks.reconcile).not.toHaveBeenCalled();
   });
+  it("acknowledges station events Squid does not act on", async () => {
+    for (const [id, type] of [
+      ["evt_6", "station.credentials_changed"],
+      ["evt_7", "station.configuration_changed"],
+    ]) {
+      const response = await deliver({
+        id,
+        type,
+        tenant_id: 18,
+        resource_id: "43",
+        data: { station_id: 43 },
+      });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ received: true });
+    }
+    expect(mocks.reconcile).not.toHaveBeenCalled();
+  });
   it("accepts a finalized bill that names the session inside the payload", async () => {
     const response = await deliver({
       id: "evt_5",

@@ -11,6 +11,7 @@ import { withConnectionUrl } from "@/lib/server/properties";
 import type { HostSession, Property } from "@/lib/types";
 import { hostContext, isAdmin } from "@/lib/server/admin";
 import { HttpError } from "@/lib/server/security";
+import { newsletterConsent } from "@/lib/server/newsletter";
 export const dynamic = "force-dynamic";
 export default async function DashboardPage() {
   if (!supabaseConfigured()) redirect("/login");
@@ -60,7 +61,7 @@ export default async function DashboardPage() {
         </Link>
       </main>
     );
-  const [account, status] = await Promise.all([
+  const [account, status, newsletter] = await Promise.all([
     payoutStatus(host.id).catch(() => ({ ready: false, id: undefined })),
     Promise.all(
       (properties.data as Property[]).map(
@@ -70,6 +71,7 @@ export default async function DashboardPage() {
         ],
       ),
     ).then(Object.fromEntries<ChargerStatus>),
+    newsletterConsent(host.id).catch(() => null),
   ]);
   return (
     <Dashboard
@@ -82,6 +84,7 @@ export default async function DashboardPage() {
         status,
         isAdmin: isAdmin(actor),
         actingAs,
+        newsletter,
       }}
     />
   );

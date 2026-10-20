@@ -10,7 +10,7 @@ import {
   processingFee,
   MINIMUM_CHARGE_CENTS,
 } from "../money";
-import { checked, db, withLock } from "./db";
+import { checked, db, LockBusyError, withLock } from "./db";
 import { appUrl } from "./config";
 import { HttpError } from "./security";
 import { stripe, payoutStatus, paymentOptions } from "./stripe";
@@ -82,6 +82,7 @@ async function ensureCheckout(
   s: ChargeSession,
   p: Property,
   options: Stripe.RequestOptions,
+  origin = appUrl(),
 ) {
   if (s.stripe_checkout_id) return;
   const key = `${s.id}:checkout`;
@@ -121,8 +122,8 @@ async function ensureCheckout(
               },
             },
           ],
-          success_url: `${appUrl()}/session/${s.id}`,
-          cancel_url: `${appUrl()}/session/${s.id}`,
+          success_url: `${origin}/session/${s.id}`,
+          cancel_url: `${origin}/session/${s.id}`,
         },
         { ...options, idempotencyKey: key },
       );
@@ -135,7 +136,11 @@ async function ensureCheckout(
     checkout_url: checkout.url,
   });
 }
-export async function createCheckout(slug: string, requestId: string) {
+export async function createCheckout(
+  slug: string,
+  requestId: string,
+  origin = appUrl(),
+) {
   const { data: p, error } = await db()
     .from("squid_properties")
     .select("*")
@@ -156,6 +161,7 @@ export async function createCheckout(slug: string, requestId: string) {
         prior as ChargeSession,
         p as Property,
         await paymentOptions(prior.stripe_account_id),
+        origin,
       );
       return loadSession(prior.id);
     }
@@ -199,7 +205,12 @@ export async function createCheckout(slug: string, requestId: string) {
         "A guest is already starting or using this charger. Please try again shortly.",
       );
     const s = checked(insertion) as ChargeSession;
-    await ensureCheckout(s, p as Property, { stripeAccount: account.id });
+    await ensureCheckout(
+      s,
+      p as Property,
+      { stripeAccount: account.id },
+      origin,
+    );
     return loadSession(id);
   });
 }
@@ -260,6 +271,42 @@ function hasCompletedBill(external: ExternalSession) {
         external.bill.transaction_id === external.usage.transaction_id
       : external.status === "completed")
   );
+}
+// Guest pages read the stored snapshot. Ivora is consulted only when the
+// snapshot is older than this window (webhooks and the cron normally keep it
+// fresher). Configurable, clamped to a safe range.
+export function syncWindowMs(): number {
+  const seconds = Number(process.env.SESSION_SYNC_WINDOW_SECONDS);
+  return (
+    (Number.isFinite(seconds) && seconds > 0
+      ? Math.min(Math.max(seconds, 15), 300)
+      : 45) * 1000
+  );
+}
+// Fallback sync for missed or late webhooks. Claims the staleness window with a
+// conditional update, so at most one caller per window per session reaches
+// Ivora; everything else returns the stored snapshot. Payment work still runs
+// only inside reconcile, under its lock and durable keys.
+export async function syncIfStale(id: string): Promise<ChargeSession> {
+  const s = await loadSession(id);
+  if ((TERMINAL as readonly string[]).includes(s.status) && !s.refund_requested)
+    return s;
+  const now = Date.now();
+  const claimed = checked(
+    await db()
+      .from("squid_sessions")
+      .update({ updated_at: new Date(now).toISOString() })
+      .eq("id", id)
+      .lte("updated_at", new Date(now - syncWindowMs()).toISOString())
+      .select("id"),
+  );
+  if (!claimed?.length) return s;
+  try {
+    return await reconcile(id);
+  } catch (error) {
+    if (error instanceof LockBusyError) return loadSession(id);
+    throw error;
+  }
 }
 export async function reconcile(id: string): Promise<ChargeSession> {
   return withLock(`session:${id}`, async () => {

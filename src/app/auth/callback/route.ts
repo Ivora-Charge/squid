@@ -11,12 +11,12 @@ export async function GET(request: NextRequest) {
         request.nextUrl.searchParams.get("next") === "/login/reset"
           ? "/login/reset"
           : "/dashboard";
-      return NextResponse.redirect(`${appUrl()}${next}`, {
+      return NextResponse.redirect(`${appUrl(request)}${next}`, {
         headers: { "Cache-Control": "private, no-store" },
       });
     }
   }
-  return NextResponse.redirect(`${appUrl()}/login?error=auth`, {
+  return NextResponse.redirect(`${appUrl(request)}/login?error=auth`, {
     headers: { "Cache-Control": "private, no-store" },
   });
 }

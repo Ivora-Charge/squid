@@ -1,7 +1,7 @@
 import "server-only";
 import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { authCookieOptions, required } from "./config";
 import { randomUUID } from "node:crypto";
 export class LockBusyError extends Error {
@@ -23,7 +23,7 @@ export async function auth() {
     required("SUPABASE_URL"),
     required("SUPABASE_ANON_KEY"),
     {
-      cookieOptions: authCookieOptions(),
+      cookieOptions: authCookieOptions({ headers: await headers() }),
       cookies: {
         getAll: () => jar.getAll(),
         setAll(values) {

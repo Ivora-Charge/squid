@@ -5,6 +5,11 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    env:
+      # Obvious dummy test values, not secrets: the e2e run expects the Stripe
+      # webhook to reject unsigned requests with 400, which needs a secret set.
+      STRIPE_WEBHOOK_SECRET: whsec_ci_placeholder
+      STRIPE_SECRET_KEY: sk_test_ci_placeholder
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

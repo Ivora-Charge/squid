@@ -9,7 +9,7 @@ export async function proxy(request: NextRequest) {
     process.env.SUPABASE_URL,
     process.env.SUPABASE_ANON_KEY,
     {
-      cookieOptions: authCookieOptions(),
+      cookieOptions: authCookieOptions(request),
       cookies: {
         getAll: () => request.cookies.getAll(),
         setAll(values) {

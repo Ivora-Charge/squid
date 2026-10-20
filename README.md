@@ -34,6 +34,7 @@ npm run dev
 | Variable                                                        | Purpose                                                                                           |
 | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | `NEXT_PUBLIC_APP_URL`                                           | Canonical application origin, including your local port. Use HTTPS in production.                 |
+| `PREVIEW_HOST_SUFFIX`                                           | Optional, Vercel Preview only. Host suffix of preview aliases, such as `.squidcharge.dev`.        |
 | `SUPABASE_URL`, `SUPABASE_ANON_KEY`                             | Supabase project and public auth key.                                                             |
 | `SUPABASE_SERVICE_ROLE_KEY`                                     | Server-only administrative key. An anon key cannot replace it.                                    |
 | `SUPABASE_DB_URL`                                               | Only needed to run the migration command. Use the direct or session pooler connection string.     |
@@ -46,9 +47,15 @@ npm run dev
 | `GOOGLE_MAPS_ADDRESS_API_KEY`                                   | Server-only Google key with Places API (New) and Time Zone API enabled.                           |
 | `OCPP_CREDENTIAL_KEY`                                           | Stable 32-byte encryption key as 64 hex characters; generate with `openssl rand -hex 32`.         |
 | `STRIPE_SECRET_KEY`                                             | Squid's Stripe platform secret key. Start with test mode.                                         |
-| `STRIPE_WEBHOOK_SECRET`                                         | Signing secret for Squid's Stripe webhook endpoint.                                               |
+| `STRIPE_WEBHOOK_SECRET`                                         | Signing secret for Squid's Stripe webhook endpoint. When unset, the webhook returns 503.          |
 | `STRIPE_CONNECT_WEBHOOK_SECRET`                                 | Signing secret for the connected-account webhook endpoint at the same URL.                        |
+| `SESSION_SYNC_WINDOW_SECONDS`                                   | Optional. Staleness window for the guest-page fallback sync, 15 to 300 seconds. Default 45.       |
 | `CRON_SECRET`                                                   | A random secret protecting scheduled reconciliation.                                              |
+| `NEWSLETTER_SENDING_ENABLED`                                    | Host newsletter sending. Off unless set to `true`; enable only after DKIM and DMARC are in place. |
+| `NEWSLETTER_FROM_EMAIL`                                         | Optional newsletter sender on your verified domain. Defaults to `RESEND_FROM_EMAIL`.              |
+| `NEWSLETTER_POSTAL_ADDRESS`                                     | Sender postal address printed in every newsletter footer. Required to send.                       |
+| `NEWSLETTER_SIGNING_KEY`                                        | At least 32 random characters; signs unsubscribe and click links. Keep it stable.                 |
+| `RESEND_WEBHOOK_SECRET`                                         | Signing secret of the Resend webhook that reports bounces and complaints.                         |
 | `NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN`, `NEXT_PUBLIC_POSTHOG_HOST` | Optional PostHog project key and ingest host. Provisioned by the Vercel PostHog integration.      |
 | `NEXT_PUBLIC_GA_MEASUREMENT_ID`                                 | Optional Google Analytics 4 measurement ID.                                                       |
 
@@ -107,6 +114,8 @@ Address suggestions fill the property's location and time zone automatically. Th
 
 New station identities use a shortened property name and a unique suffix, such as `bluebird-cabin-a1b2c3`, with at most 23 characters. Squid presets a random 16-character OCPP password using uppercase letters and digits without `I`, `O`, `0`, or `1`. The password is installed through Ivora's credentials API before setup completes. The `202609240001_charger_credentials.sql` migration stores it encrypted with AES-256-GCM in a service-only table. Keep `OCPP_CREDENTIAL_KEY` backed up and consistent across instances sharing this database; changing it prevents old passwords from being decrypted. Owners can retrieve their password from the authenticated setup dialog. Existing station identities and connection passwords stay valid; an existing charger can receive a preset through an explicit offline setup action.
 
+Squid sets a charger password only before the charger connects: Ivora stores it for the station's next connection. Ivora changes a connected charger's password only when the API key holds the `stations:admin` scope. Squid's key uses `stations:write` alone, to keep its shared fleet key least-privileged: a leaked key with `stations:admin` could change the password of any connected charger in the fleet. When Ivora refuses a connected charger (`station_online` or `stations_admin_required`), nothing reaches the charger. The host is asked to disconnect it and try again. A pending preset never blocks the rest of setup. Ivora allows at most 5 credential changes per station per hour; over the limit Squid shows Ivora's `Retry-After` wait.
+
 Hosts save their charger and receive its OCPP connection details before starting Stripe payout onboarding. Once the charger appears online, its setup page offers Stripe Connect; retries reuse the saved charger, and both Stripe return and refresh URLs reopen that charger's setup. Squid checks the actual account status before publishing. Preview the first-host flow at `/demo?onboarding=1`.
 
 The app connects chargers to Ivora's OCPP service. Vercel runs the web application and server routes; it does not host persistent OCPP WebSockets. API schema: [Ivora OpenAPI](https://api.ivoracharge.co/openapi.json).
@@ -125,9 +134,48 @@ The verified account `mingcan@ivoracharge.com` can open `/admin` to search host 
 
 Apply `202610010001_feedback_admin.sql` before deploying this feature. Feedback, tenant access, and the append-only audit log are service-only tables with RLS; browser roles cannot read or write them or execute the admin database functions.
 
+### Host newsletter
+
+Hosts can turn on a weekly newsletter in **Settings → Host newsletter**. It is off by default and is never turned on for a host by anyone else, including an administrator using **Act as tenant**. Each change saves a timestamped record in `squid_newsletter_consent_events`, with the exact consent wording shown and whether it came from Settings or an unsubscribe link.
+
+The admin **Newsletter** tab composes issues with a title and a plain-text body. Blank lines separate paragraphs, and links use `[label](https://www.squidcharge.io/page)`; links to other sites are rejected. Each issue goes through the same steps:
+
+1. **Preview** renders the email exactly as hosts will see it.
+2. **Send test to me** sends it only to the signed-in administrator and records a hash of the tested content.
+3. **Approve** is accepted by the database only from the verified administrator, for content whose hash matches both the preview and the test. Editing an issue returns it to draft and discards its test and approval.
+4. **Send** snapshots confirmed hosts who opted in and are not suppressed. The database refuses to start a send unless the issue is approved and its content is unchanged.
+
+Nothing is sent, not even a test, until `NEWSLETTER_SENDING_ENABLED=true`, and sending also requires `RESEND_API_KEY`, a sender, `NEWSLETTER_POSTAL_ADDRESS` and `NEWSLETTER_SIGNING_KEY`. Delivery uses the Resend account already used for account emails, about two emails per second with one idempotency key per recipient. The first batch goes out when you press **Send**; `/api/cron/newsletter` continues larger sends every minute and does nothing while sending is disabled. Consent and suppression are checked again before each batch.
+
+Every newsletter email includes:
+
+- RFC 8058 one-click unsubscribe: `List-Unsubscribe` with a signed HTTPS URL and `List-Unsubscribe-Post: List-Unsubscribe=One-Click`. Mail providers POST to it directly.
+- A footer **Unsubscribe** link to a confirmation page with one button. Opening the page changes nothing, so link scanners cannot unsubscribe a host.
+- The postal address from `NEWSLETTER_POSTAL_ADDRESS`.
+
+Unsubscribing adds the address to `squid_newsletter_suppressions`, turns off the host's consent and records the change. Permanent bounces and spam complaints reported by Resend also join the suppression list. A host who later opts in again from Settings lifts their own unsubscribe; bounces and complaints stay suppressed. Register a Resend webhook at `https://<your-domain>/api/newsletter/webhook` for `email.bounced` and `email.complained`, and store its signing secret as `RESEND_WEBHOOK_SECRET`.
+
+Each issue shows sent, bounced, unsubscribed and click counts. Links in sent emails go through `/api/newsletter/click`, which follows only links signed for that recipient and pointing at an allowed Squid host. Some mail security scanners follow links, so treat clicks as an upper bound. There is no open-tracking pixel; keep Resend open and click tracking disabled.
+
+**Before enabling sending**, publish SPF and DKIM records for the sending domain as shown in Resend's domain settings and confirm the domain is verified, then publish a DMARC record, for example `_dmarc.<domain> TXT "v=DMARC1; p=none; rua=mailto:<reports-address>"`. Move to `p=quarantine` or `p=reject` once reports show aligned mail. Gmail and Yahoo require DKIM, DMARC and one-click unsubscribe for bulk senders. See [Resend domains](https://resend.com/docs/dashboard/domains/introduction) and [RFC 8058](https://www.rfc-editor.org/rfc/rfc8058).
+
+Apply `202610160001_newsletter.sql` before deploying this feature. The newsletter tables are service-only with RLS. Consent, unsubscribe, bounce, approval and send-start changes go through database functions that browser roles cannot execute.
+
 ### Analytics
 
 When their variables are set, `src/instrumentation-client.ts` starts PostHog and Google Analytics 4 in the browser. Neither loads when its variable is empty, so local development and forks send nothing by default. PostHog captures pageviews, clicks, and session replays with every form input masked; the OCPP password field is also excluded with `ph-no-capture`. PostHog traffic goes through Squid's own origin at `/ingest` (rewritten in `next.config.ts`) so ad blockers do not drop it. Sign-in and password-reset pages carry one-use tokens in the URL fragment, so neither tool starts on those pages, and fragments are stripped from every URL PostHog records. Stripe Checkout runs on Stripe's domain and is not captured.
+
+### Session sync model and Ivora call budget
+
+Guest pages do not poll Ivora. `GET /api/sessions/[id]` returns the stored `squid_sessions` snapshot, so the page can poll Squid every 5 seconds at the cost of a database read. State moves forward in three ways:
+
+1. **Ivora webhooks** (`charging_session.status_changed`, `bill.finalized`) reconcile the matching session right after the signed, deduplicated acknowledgement. This is the main path.
+2. **Fallback sync.** When a guest poll finds a snapshot older than `SESSION_SYNC_WINDOW_SECONDS` (default 45), it claims the window with a conditional update of `updated_at` and reconciles once. Concurrent polls, tabs, and the old `sync` action see the claim already taken and return the stored snapshot, so there is at most one fallback sync per session per window. Any save to the session, from a webhook, the cron, or a sync, restarts the window.
+3. **Cron.** `/api/cron/reconcile` still reconciles up to ten open sessions every minute, which covers guests who closed the page.
+
+Explicit guest actions (stop) skip the window and reconcile at once. Capture, refunds, and the fee check still run only inside `reconcile`, under the session lock and durable idempotency keys, so a webhook and a fallback sync running together capture once.
+
+Each `reconcile` makes one or two Ivora reads (the charging session, plus a re-read after a start or stop). Rough budget per active session, with webhooks delivering: a few calls per status change, plus at most 60 / window ≈ 1 to 2 fallback reconciles a minute, and the cron adds at most one per minute. That is roughly 2 to 4 Ivora calls a minute for a session whose guest page is open, down from 10 or more, and independent of how many tabs are open. Without webhooks (previews, or a missed registration) the same fallback and the cron drive the session on their own, with state lagging by up to one window.
 
 ### Ivora webhooks
 
@@ -139,7 +187,7 @@ Ivora pushes signed `charging_session.status_changed`, `bill.finalized`, and `op
 2. Set the environment variables above for the intended environment. Use separate Supabase, Stripe, and Ivora test resources for previews.
 3. Apply all Supabase migrations. Set `NEXT_PUBLIC_APP_URL` to the canonical HTTPS origin and add its Supabase callback and confirmation URLs. Configure the Resend sender if using custom email delivery.
 4. Register platform and connected-account Stripe webhooks against that origin and set both signing secrets.
-5. Set `CRON_SECRET`. The included `vercel.json` invokes `/api/cron/reconcile` every minute. Vercel supplies the bearer secret automatically.
+5. Set `CRON_SECRET`. The included `vercel.json` invokes `/api/cron/reconcile` and `/api/cron/newsletter` every minute. Vercel supplies the bearer secret automatically.
 6. Verify the complete flow with Stripe test accounts and a designated test charger. Print stickers only after choosing a stable public domain.
 
 The every-minute job requires Vercel Pro or Enterprise under the current [Cron limits](https://vercel.com/docs/cron-jobs/usage-and-pricing). For a demo on Hobby, remove the cron entry. For real sessions, supply an external scheduler every minute with `Authorization: Bearer <CRON_SECRET>`; guest polling alone is insufficient because guests can close their browser.
@@ -161,6 +209,18 @@ https://www.squidcharge.dev/login/confirm
 ```
 
 Keep any LAN callbacks needed for local development. Store secrets in Vercel and the ignored local `.env`; `SUPABASE_DB_URL` is only needed locally for migrations. Production runs as a separate Vercel project with its own credentials; see below.
+
+### Preview deployments
+
+Pull requests also build Vercel Preview deployments, served at their `*.vercel.app` URLs and at stable aliases such as `https://pr-12.squidcharge.dev`. When `VERCEL_ENV` is `preview`, Squid derives its origin from the request host so that sign-in callbacks, email links, form origin checks, secure cookies, Stripe Connect return/refresh URLs, and Checkout success/cancel URLs stay on that preview. Only these hosts are trusted: hosts ending in `PREVIEW_HOST_SUFFIX` and the deployment's own `VERCEL_URL` or `VERCEL_BRANCH_URL`. Any other `Host` or `X-Forwarded-Host` value falls back to `NEXT_PUBLIC_APP_URL`, as do production and local development. Set the suffix with its leading dot to a domain that only your Vercel project serves, for example `PREVIEW_HOST_SUFFIX=.squidcharge.dev` in the **Preview** environment.
+
+In the Supabase project used by previews, add this wildcard to the Auth redirect URLs:
+
+```text
+https://*.squidcharge.dev/**
+```
+
+Stripe webhooks are registered only for the main origin, so previews do not receive them. Vercel also does not run cron jobs on Preview deployments. A preview's guest Checkout and charging session complete through the fallback sync, which runs while the guest's session page is open (each step can lag by up to `SESSION_SYNC_WINDOW_SECONDS`); previews are for test-mode checks only.
 
 ### Squid production
 

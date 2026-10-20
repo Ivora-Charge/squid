@@ -97,6 +97,14 @@ test("landing, host demo, and navigation are mobile friendly", async ({
   await expect(
     page.getByRole("heading", { name: "Your host account" }),
   ).toBeVisible();
+  // The newsletter is opt-in: off until the host checks the box.
+  const newsletter = page.getByRole("checkbox", {
+    name: /weekly Squid host newsletter/,
+  });
+  await expect(newsletter).not.toBeChecked();
+  await newsletter.check();
+  await expect(newsletter).toBeChecked();
+  await expect(page.getByText("Subscribed", { exact: true })).toBeVisible();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
@@ -120,7 +128,9 @@ test("guest can preview pricing, charge, and receive a demo receipt without real
   await page.goto("/c/demo");
   const charge = page.getByRole("button", { name: "Try a demo charge" });
   await expect(charge).toBeDisabled();
-  await page.getByRole("slider").fill("30");
+  const energy = page.getByRole("slider");
+  await expect(energy).toBeEnabled();
+  await energy.fill("30");
   await expect(page.getByText("$10.50", { exact: false })).toBeVisible();
   await page.getByRole("checkbox").check();
   await charge.click();
@@ -166,6 +176,32 @@ test("session controls wait for their JavaScript before accepting a stop", async
   await expect(
     page.getByRole("heading", { name: "Ready for your next adventure." }),
   ).toBeVisible();
+});
+test("guest pricing inputs wait for their JavaScript before accepting a change", async ({
+  page,
+}) => {
+  let releaseScripts!: () => void;
+  const scriptsReady = new Promise<void>((resolve) => {
+    releaseScripts = resolve;
+  });
+  await page.route("**/_next/**/*.js", async (route) => {
+    await scriptsReady;
+    await route.continue();
+  });
+  const energy = page.getByRole("slider");
+  const plugged = page.getByRole("checkbox");
+  try {
+    await page.goto("/c/demo", { waitUntil: "commit" });
+    await expect(energy).toBeVisible();
+    await expect(energy).toBeDisabled();
+    await expect(plugged).toBeDisabled();
+  } finally {
+    releaseScripts();
+  }
+  await expect(energy).toBeEnabled();
+  await energy.fill("30");
+  await expect(page.getByText("$10.50", { exact: false })).toBeVisible();
+  await expect(plugged).toBeEnabled();
 });
 test("host generates a downloadable QR sticker with a real guest URL", async ({
   page,
@@ -221,6 +257,47 @@ test("charger onboarding waits for JavaScript before accepting a click", async (
   await add.click();
   await expect(
     page.getByRole("heading", { name: "Tell us about your place." }),
+  ).toBeVisible();
+});
+test("dashboard controls wait for JavaScript before accepting a click", async ({
+  page,
+  isMobile,
+}) => {
+  let releaseScripts!: () => void;
+  const scriptsReady = new Promise<void>((resolve) => {
+    releaseScripts = resolve;
+  });
+  await page.route("**/_next/**/*.js", async (route) => {
+    await scriptsReady;
+    await route.continue();
+  });
+  const sticker = page
+    .getByRole("button", { name: "QR sticker", exact: true })
+    .first();
+  const charger = page
+    .getByRole("button", { name: "The Weekender", exact: true })
+    .first();
+  const nav = page
+    .locator(isMobile ? ".mobile-nav" : ".sidebar")
+    .getByRole("button", {
+      name: isMobile ? "Earnings" : "Earnings & payouts",
+      exact: true,
+    });
+  try {
+    await page.goto("/demo", { waitUntil: "commit" });
+    await expect(sticker).toBeVisible();
+    await expect(sticker).toBeDisabled();
+    await expect(charger).toBeDisabled();
+    await expect(nav).toBeDisabled();
+  } finally {
+    releaseScripts();
+  }
+  await expect(sticker).toBeEnabled();
+  await sticker.click();
+  await expect(
+    page.getByRole("img", {
+      name: "Printable Squid QR sticker for The Weekender",
+    }),
   ).toBeVisible();
 });
 test("host can add a demo charger and filter it", async ({
