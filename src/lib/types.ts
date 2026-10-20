@@ -103,6 +103,8 @@ export type HostSession = Pick<
 export type DashboardData = {
   // The host's own Squid fee rate, in basis points.
   feeBasisPoints: number;
+  // When new accounts start paying 10%, formatted with its timezone.
+  feeEffectiveAt: string;
   properties: Property[];
   sessions: HostSession[];
   email: string;

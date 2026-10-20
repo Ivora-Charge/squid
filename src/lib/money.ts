@@ -1,6 +1,6 @@
-// Squid's application fee, in basis points of the final bill. Each host keeps
-// the rate set when their host record was created, and every session
-// snapshots its host's rate at checkout.
+// Squid's application fee, in basis points of the final bill. A host's rate
+// follows from when their Squid account was created (see hostRateFor), and
+// every session snapshots its host's rate at checkout.
 export const LEGACY_FEE_BASIS_POINTS = 600;
 export const NEW_HOST_FEE_BASIS_POINTS = 1000;
 export const FEE_BASIS_POINTS = [
@@ -8,6 +8,59 @@ export const FEE_BASIS_POINTS = [
   NEW_HOST_FEE_BASIS_POINTS,
 ] as const;
 export type FeeBasisPoints = (typeof FEE_BASIS_POINTS)[number];
+// Accounts created on or after this instant pay the new-host rate. Operators
+// may override it with NEW_HOST_FEE_EFFECTIVE_AT.
+export const DEFAULT_NEW_HOST_FEE_EFFECTIVE_AT = "2026-11-01T00:00:00Z";
+const INSTANT =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,9})?)?(?:Z|([+-])(\d{2}):(\d{2}))$/;
+// Parses an ISO-8601 instant with an explicit UTC offset. Anything else,
+// including impossible calendar dates, is a configuration error.
+export function parseInstant(value: string): Date {
+  const [year, month, day, hour, minute, second, , offsetHours, offsetMinutes] =
+    (INSTANT.exec(value) ?? []).slice(1).map((part) => Number(part ?? 0));
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    !INSTANT.test(value) ||
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day ||
+    hour > 23 ||
+    minute > 59 ||
+    second > 59 ||
+    offsetHours > 23 ||
+    offsetMinutes > 59 ||
+    !Number.isFinite(Date.parse(value))
+  )
+    throw new Error(`Invalid ISO-8601 instant: ${JSON.stringify(value)}`);
+  return new Date(Date.parse(value));
+}
+// 6% for accounts created before the effective instant, 10% from it onwards.
+export function hostRateFor(
+  accountCreatedAt: string,
+  effectiveAt: Date,
+): FeeBasisPoints {
+  const created = Date.parse(accountCreatedAt);
+  if (!Number.isFinite(created) || !Number.isFinite(effectiveAt.getTime()))
+    throw new Error("Cannot determine the host's Squid fee rate");
+  return created < effectiveAt.getTime()
+    ? LEGACY_FEE_BASIS_POINTS
+    : NEW_HOST_FEE_BASIS_POINTS;
+}
+// The effective instant as shown to people, always in UTC, for example
+// "November 1, 2026 (00:00 UTC)".
+export function formatEffectiveAt(effectiveAt: Date) {
+  const utc = (options: Intl.DateTimeFormatOptions) =>
+    new Intl.DateTimeFormat("en-US", { timeZone: "UTC", ...options }).format(
+      effectiveAt,
+    );
+  const time = utc({
+    hour: "2-digit",
+    minute: "2-digit",
+    second: effectiveAt.getUTCSeconds() ? "2-digit" : undefined,
+    hourCycle: "h23",
+  });
+  return `${utc({ month: "long", day: "numeric", year: "numeric" })} (${time} UTC)`;
+}
 // Stripe's standard US card rate, passed through to hosts at cost.
 export const STRIPE_FEE_BASIS_POINTS = 290;
 export const STRIPE_FEE_PERCENT = STRIPE_FEE_BASIS_POINTS / 100;

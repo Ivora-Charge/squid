@@ -53,13 +53,14 @@ export const demoProperties: Property[] = [
     created_at: "2026-09-01T00:00:00Z",
   },
 ];
-export function demoDashboard(): DashboardData {
+export function demoDashboard(feeEffectiveAt: string): DashboardData {
   const now = new Date();
   return {
     properties: demoProperties,
     email: "alex@example.com",
     // The demo shows the rate a host joining today receives.
     feeBasisPoints: NEW_HOST_FEE_BASIS_POINTS,
+    feeEffectiveAt,
     payoutsReady: true,
     stripeConnected: true,
     // One of each, so the demo shows how an offline charger looks.

@@ -1,4 +1,5 @@
 import "server-only";
+import { DEFAULT_NEW_HOST_FEE_EFFECTIVE_AT, parseInstant } from "../money";
 export function required(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`Missing ${name}. See the setup guide.`);
@@ -66,4 +67,18 @@ export function authCookieOptions(request?: RequestLike) {
     sameSite: "lax" as const,
     path: "/",
   };
+}
+// The instant from which newly created Squid accounts pay the new-host fee.
+// Unset (or empty) uses the default; an invalid value is a configuration
+// error and is never replaced by the default.
+export function newHostFeeEffectiveAt(): Date {
+  const value = process.env.NEW_HOST_FEE_EFFECTIVE_AT;
+  if (!value) return parseInstant(DEFAULT_NEW_HOST_FEE_EFFECTIVE_AT);
+  try {
+    return parseInstant(value);
+  } catch {
+    throw new Error(
+      "Invalid NEW_HOST_FEE_EFFECTIVE_AT. Use an ISO-8601 instant with a UTC offset, such as 2026-11-01T00:00:00Z.",
+    );
+  }
 }

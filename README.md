@@ -4,7 +4,7 @@
 
 Squid turns an OCPP charger at a vacation rental into a paid guest amenity. Hosts connect their charger, set a price, connect payouts, and print a QR sticker. Guests scan, authorize a card hold, charge, and pay for the energy delivered. The interface is dark, responsive, and designed for phones.
 
-This is an Apache-2.0 reference application for the Ivora API. One Squid operator manages all hosts through one Ivora tenant. Squid owns guest access while Stripe Connect charges guests directly on each host's connected account. Squid takes a 10% application fee from new hosts, while hosts who joined before that rate keep 6%; Stripe bills card processing to the host account. Ivora handles OCPP and metered billing through **external-funded charging sessions**, without using Ivora payment adapters.
+This is an Apache-2.0 reference application for the Ivora API. One Squid operator manages all hosts through one Ivora tenant. Squid owns guest access while Stripe Connect charges guests directly on each host's connected account. Squid takes a 10% application fee from hosts whose Squid account is created on or after `NEW_HOST_FEE_EFFECTIVE_AT` (November 1, 2026 by default), while earlier hosts keep 6%; Stripe bills card processing to the host account. Ivora handles OCPP and metered billing through **external-funded charging sessions**, without using Ivora payment adapters.
 
 ![The dark Squid host dashboard, showing charging earnings, usage, and property chargers](docs/squid-preview.png)
 
@@ -31,33 +31,34 @@ npm run check:setup
 npm run dev
 ```
 
-| Variable                                                        | Purpose                                                                                           |
-| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `NEXT_PUBLIC_APP_URL`                                           | Canonical application origin, including your local port. Use HTTPS in production.                 |
-| `PREVIEW_HOST_SUFFIX`                                           | Optional, Vercel Preview only. Host suffix of preview aliases, such as `.squidcharge.dev`.        |
-| `SUPABASE_URL`, `SUPABASE_ANON_KEY`                             | Supabase project and public auth key.                                                             |
-| `SUPABASE_SERVICE_ROLE_KEY`                                     | Server-only administrative key. An anon key cannot replace it.                                    |
-| `SUPABASE_DB_URL`                                               | Only needed to run the migration command. Use the direct or session pooler connection string.     |
-| `RESEND_API_KEY`                                                | Optional server-only key for Squid-branded sign-in emails.                                        |
-| `RESEND_FROM_EMAIL`                                             | Sender on your verified domain, such as `Squid by Ivora <hello@squidcharge.io>`.                  |
-| `IVORA_API_URL`                                                 | Ivora API origin. The supplied `.co` endpoint is preproduction.                                   |
-| `IVORA_API_KEY`, `IVORA_TENANT_ID`                              | Server-only credentials for Squid's shared fleet account.                                         |
-| `OCPP_URL_PREFIX`                                               | Optional secure OCPP URL prefix shown to hosts. Squid appends the station identity.               |
-| `IVORA_WEBHOOK_SECRET`                                          | Signing secret printed once by `npm run ivora:webhook -- register <url>`. Enables Ivora webhooks. |
-| `GOOGLE_MAPS_ADDRESS_API_KEY`                                   | Server-only Google key with Places API (New) and Time Zone API enabled.                           |
-| `OCPP_CREDENTIAL_KEY`                                           | Stable 32-byte encryption key as 64 hex characters; generate with `openssl rand -hex 32`.         |
-| `STRIPE_SECRET_KEY`                                             | Squid's Stripe platform secret key. Start with test mode.                                         |
-| `STRIPE_WEBHOOK_SECRET`                                         | Signing secret for Squid's Stripe webhook endpoint. When unset, the webhook returns 503.          |
-| `STRIPE_CONNECT_WEBHOOK_SECRET`                                 | Signing secret for the connected-account webhook endpoint at the same URL.                        |
-| `SESSION_SYNC_WINDOW_SECONDS`                                   | Optional. Staleness window for the guest-page fallback sync, 15 to 300 seconds. Default 45.       |
-| `CRON_SECRET`                                                   | A random secret protecting scheduled reconciliation.                                              |
-| `NEWSLETTER_SENDING_ENABLED`                                    | Host newsletter sending. Off unless set to `true`; enable only after DKIM and DMARC are in place. |
-| `NEWSLETTER_FROM_EMAIL`                                         | Optional newsletter sender on your verified domain. Defaults to `RESEND_FROM_EMAIL`.              |
-| `NEWSLETTER_POSTAL_ADDRESS`                                     | Sender postal address printed in every newsletter footer. Required to send.                       |
-| `NEWSLETTER_SIGNING_KEY`                                        | At least 32 random characters; signs unsubscribe and click links. Keep it stable.                 |
-| `RESEND_WEBHOOK_SECRET`                                         | Signing secret of the Resend webhook that reports bounces and complaints.                         |
-| `NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN`, `NEXT_PUBLIC_POSTHOG_HOST` | Optional PostHog project key and ingest host. Provisioned by the Vercel PostHog integration.      |
-| `NEXT_PUBLIC_GA_MEASUREMENT_ID`                                 | Optional Google Analytics 4 measurement ID.                                                       |
+| Variable                                                        | Purpose                                                                                                  |
+| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `NEXT_PUBLIC_APP_URL`                                           | Canonical application origin, including your local port. Use HTTPS in production.                        |
+| `PREVIEW_HOST_SUFFIX`                                           | Optional, Vercel Preview only. Host suffix of preview aliases, such as `.squidcharge.dev`.               |
+| `SUPABASE_URL`, `SUPABASE_ANON_KEY`                             | Supabase project and public auth key.                                                                    |
+| `SUPABASE_SERVICE_ROLE_KEY`                                     | Server-only administrative key. An anon key cannot replace it.                                           |
+| `SUPABASE_DB_URL`                                               | Only needed to run the migration command. Use the direct or session pooler connection string.            |
+| `RESEND_API_KEY`                                                | Optional server-only key for Squid-branded sign-in emails.                                               |
+| `RESEND_FROM_EMAIL`                                             | Sender on your verified domain, such as `Squid by Ivora <hello@squidcharge.io>`.                         |
+| `IVORA_API_URL`                                                 | Ivora API origin. The supplied `.co` endpoint is preproduction.                                          |
+| `IVORA_API_KEY`, `IVORA_TENANT_ID`                              | Server-only credentials for Squid's shared fleet account.                                                |
+| `OCPP_URL_PREFIX`                                               | Optional secure OCPP URL prefix shown to hosts. Squid appends the station identity.                      |
+| `IVORA_WEBHOOK_SECRET`                                          | Signing secret printed once by `npm run ivora:webhook -- register <url>`. Enables Ivora webhooks.        |
+| `GOOGLE_MAPS_ADDRESS_API_KEY`                                   | Server-only Google key with Places API (New) and Time Zone API enabled.                                  |
+| `OCPP_CREDENTIAL_KEY`                                           | Stable 32-byte encryption key as 64 hex characters; generate with `openssl rand -hex 32`.                |
+| `STRIPE_SECRET_KEY`                                             | Squid's Stripe platform secret key. Start with test mode.                                                |
+| `STRIPE_WEBHOOK_SECRET`                                         | Signing secret for Squid's Stripe webhook endpoint. When unset, the webhook returns 503.                 |
+| `STRIPE_CONNECT_WEBHOOK_SECRET`                                 | Signing secret for the connected-account webhook endpoint at the same URL.                               |
+| `NEW_HOST_FEE_EFFECTIVE_AT`                                     | Optional ISO-8601 instant with offset. Accounts created from it pay 10%. Default `2026-11-01T00:00:00Z`. |
+| `SESSION_SYNC_WINDOW_SECONDS`                                   | Optional. Staleness window for the guest-page fallback sync, 15 to 300 seconds. Default 45.              |
+| `CRON_SECRET`                                                   | A random secret protecting scheduled reconciliation.                                                     |
+| `NEWSLETTER_SENDING_ENABLED`                                    | Host newsletter sending. Off unless set to `true`; enable only after DKIM and DMARC are in place.        |
+| `NEWSLETTER_FROM_EMAIL`                                         | Optional newsletter sender on your verified domain. Defaults to `RESEND_FROM_EMAIL`.                     |
+| `NEWSLETTER_POSTAL_ADDRESS`                                     | Sender postal address printed in every newsletter footer. Required to send.                              |
+| `NEWSLETTER_SIGNING_KEY`                                        | At least 32 random characters; signs unsubscribe and click links. Keep it stable.                        |
+| `RESEND_WEBHOOK_SECRET`                                         | Signing secret of the Resend webhook that reports bounces and complaints.                                |
+| `NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN`, `NEXT_PUBLIC_POSTHOG_HOST` | Optional PostHog project key and ingest host. Provisioned by the Vercel PostHog integration.             |
+| `NEXT_PUBLIC_GA_MEASUREMENT_ID`                                 | Optional Google Analytics 4 measurement ID.                                                              |
 
 ### Supabase
 
@@ -102,7 +103,11 @@ stripe listen --forward-to localhost:3000/api/stripe/webhook --forward-connect-t
 
 Squid verifies Stripe state on the server before starting a charger. After confirmed charging completion, it captures the immutable final Ivora bill and sets `application_fee_amount` to the session's Squid fee rate, rounded half up to the nearest cent. Stripe deducts its processing fee directly from the host's connected account; Squid records the actual fee from the charge balance transaction. Bills below Stripe's $0.50 USD minimum are waived: Squid releases the entire hold and records $0 collected, while preserving Ivora's metered bill. At standard US card pricing, a $10.00 charge on a new host's charger yields $1.00 for Squid, a $0.59 processing fee, and $8.41 for the host; at 6% it yields $0.60, $0.59 and $8.81. Full refunds also refund Squid's application fee; Stripe's original processing fee might not be returned. See [Stripe direct charges](https://docs.stripe.com/connect/direct-charges) and [manual capture](https://docs.stripe.com/api/payment_intents/capture).
 
-Squid's fee is stored per host as integer basis points in `squid_hosts.fee_basis_points`: 1000 (10%) for hosts created from now on and 600 (6%) for hosts who existed before. Apply `202610190001_host_fee_rate.sql` before deploying this change. It adds the column, sets every existing host to 600, creates a 600 row for accounts that signed up but have not started payout setup yet, and makes 1000 the default for new hosts. The backfill runs only when the column is first added, so applying the file again never moves a newer host to 6%. Each charging session snapshots its host's rate in `squid_sessions.fee_basis_points` at checkout; capture, the reconciliation check of the PaymentIntent's `application_fee_amount`, and refunds use that snapshot, so changing a host's rate never alters a session already started. Sessions created before the migration are recorded at 600. Hosts see their own rate in their dashboard. Update the effective date in the terms page (`src/app/terms/page.tsx`) when the migration is applied.
+Squid's fee depends only on when the host's Squid account was created (`auth.users.created_at`): accounts created before `NEW_HOST_FEE_EFFECTIVE_AT` pay 6% (600 basis points) and accounts created at or after it pay 10% (1000). The instant defaults to `2026-11-01T00:00:00Z`. It must be an ISO-8601 instant with an explicit offset (`Z` or `±hh:mm`); an invalid value is a configuration error that stops checkout, payout setup, the dashboard and the terms page rather than falling back to the default. The rate does not depend on when migrations run, when a host starts payout setup, or whether they have a `squid_hosts` row yet. The terms page and the host dashboard show the same instant, in UTC, for example "November 1, 2026 (00:00 UTC)".
+
+Each charging session snapshots its host's rate in `squid_sessions.fee_basis_points` at checkout; capture, the reconciliation check of the PaymentIntent's `application_fee_amount`, and refunds use that snapshot, so a session never changes rate after checkout. Sessions created before the fee migrations are recorded at 600. Squid also keeps `squid_hosts.fee_basis_points` in step as a record whenever it decides a host's rate, but never reads it to set a session's rate.
+
+Apply `202610190001_host_fee_rate.sql` and `202610200001_host_fee_effective_date.sql` before deploying this change. They can run on any day, before or after the effective instant, and are safe to apply twice. The first adds the rate columns; the second makes 600 the column default, so a row saved without an explicit rate never pays 10% early, and recomputes every stored host rate from its account's creation time against the default instant. If you override `NEW_HOST_FEE_EFFECTIVE_AT`, Squid corrects each stored rate on that host's next dashboard visit, payout setup or checkout.
 
 Unplugging ends the physical transaction; reconciliation finalizes its bill and completes payment automatically. Ivora's completed session response may omit live usage, so retries settle from its immutable final bill without regressing to a starting state. A concurrent reconciliation returns the latest saved session, including any queued stop request. Guest polling keeps confirmed readings during transient failures and displays a retry notice only after repeated failures.
 
@@ -253,7 +258,7 @@ Tests cover payment and fee invariants, settlement retries, ownership and guest 
 
 ## Boundaries
 
-This implementation has a USD/US model, one connector per property, a $25 hold, whole-session refunds, and a per-host Squid fee of 10% (6% for hosts who joined earlier). Stripe bills processing to the host. Charging requests a stop at 85% of the hold or after 24 hours. Delayed meter reports or charger connectivity can still cause overages. Squid never silently caps a larger final bill or assumes a dispatched stop means the charger stopped. Uncertain outcomes remain reserved for operator review; see [recovery and architecture](docs/architecture.md).
+This implementation has a USD/US model, one connector per property, a $25 hold, whole-session refunds, and a per-host Squid fee of 10% (6% for hosts whose account predates `NEW_HOST_FEE_EFFECTIVE_AT`). Stripe bills processing to the host. Charging requests a stop at 85% of the hold or after 24 hours. Delayed meter reports or charger connectivity can still cause overages. Squid never silently caps a larger final bill or assumes a dispatched stop means the charger stopped. Uncertain outcomes remain reserved for operator review; see [recovery and architecture](docs/architecture.md).
 
 The included policy pages identify the project as a demonstration. A live operator must provide their contact information and applicable policies, configure any required taxes, and validate their hardware and payment flows before accepting guests. The current code does not calculate tax, handle disputes, or provide an automated operator reconciliation console.
 

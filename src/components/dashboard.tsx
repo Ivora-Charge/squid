@@ -47,7 +47,12 @@ import { TenantAccessBanner } from "./tenant-access-banner";
 import { AddCharger } from "./add-charger";
 import { QRSticker } from "./qr-sticker";
 import { CityPhoto } from "./city-photo";
-import { feePercent, money, splitPayment } from "@/lib/money";
+import {
+  feePercent,
+  LEGACY_FEE_BASIS_POINTS,
+  money,
+  splitPayment,
+} from "@/lib/money";
 import type { DashboardData, HostSession, Property } from "@/lib/types";
 import { NEWSLETTER_CONSENT, type NewsletterConsent } from "@/lib/newsletter";
 import type { ChargerStatus } from "@/lib/status";
@@ -872,6 +877,11 @@ export function Dashboard({
                       30¢) is deducted from your connected Stripe account,
                       leaving {money(feeExample.host)}. Stripe bills its
                       processing fee directly; Squid adds nothing on top.
+                    </p>
+                    <p>
+                      {data.feeBasisPoints === LEGACY_FEE_BASIS_POINTS
+                        ? `Your Squid account was created before ${data.feeEffectiveAt}, so you keep the ${feePercent(data.feeBasisPoints)} fee.`
+                        : `Squid accounts created on or after ${data.feeEffectiveAt} pay a ${feePercent(data.feeBasisPoints)} fee.`}
                     </p>
                     <p>
                       The charging payment lands in your Stripe balance after

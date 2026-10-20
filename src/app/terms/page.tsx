@@ -1,10 +1,14 @@
 import Link from "next/link";
 import { Brand } from "@/components/ui";
-// Version 2 raised Squid's fee for new hosts from 6% to 10%. The operator must
-// keep EFFECTIVE_DATE in step with the date the fee migration is applied.
+import { formatEffectiveAt } from "@/lib/money";
+import { newHostFeeEffectiveAt } from "@/lib/server/config";
+// Version 2 raised Squid's fee for new hosts from 6% to 10%. Its effective date
+// is NEW_HOST_FEE_EFFECTIVE_AT, the same instant that decides each host's rate.
+// Rendered per request so the date always matches the running configuration.
+export const dynamic = "force-dynamic";
 const TERMS_VERSION = 2;
-const EFFECTIVE_DATE = "November 1, 2026";
 export default function Terms() {
+  const EFFECTIVE_DATE = formatEffectiveAt(newHostFeeEffectiveAt());
   return (
     <div className="docs-layout">
       <header className="docs-header">

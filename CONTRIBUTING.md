@@ -4,7 +4,7 @@ Use Node.js 22+ and run `npm ci`. The `/demo` and `/c/demo` routes let you work 
 
 Keep changes focused. Explain the behavior being fixed, the resulting experience, and relevant validation in your pull request. Run `npm run format`, `npm run typecheck`, `npm test`, and `npm run build`; run browser tests when changing a user flow. CI runs these checks without access to fleet or payment secrets.
 
-Payment changes must preserve integer amounts, the per-host final-value fee snapshotted on each session (10% for new hosts, 6% for existing hosts), server-verified authorization, matched metering, and stable idempotency keys. Authorization changes must maintain host ownership and guest session isolation. Add regression coverage for consequential behavior. Do not substitute mocked results for a live integration and label it production verified.
+Payment changes must preserve integer amounts, the per-host final-value fee snapshotted on each session (10% for accounts created on or after `NEW_HOST_FEE_EFFECTIVE_AT`, 6% before), server-verified authorization, matched metering, and stable idempotency keys. Authorization changes must maintain host ownership and guest session isolation. Add regression coverage for consequential behavior. Do not substitute mocked results for a live integration and label it production verified.
 
 Never commit `.env`, provider keys, guest data, real Stripe payloads, or database dumps. Keep UI changes accessible with keyboard navigation, visible focus, reduced-motion support, and phone-sized layouts. Document changes to deployment requirements and environment variables.
 
