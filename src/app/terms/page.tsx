@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { Brand } from "@/components/ui";
 // Version 2 raised Squid's fee for new hosts from 6% to 10%. The operator must
-// replace the placeholder with the date the fee migration is applied.
+// keep EFFECTIVE_DATE in step with the date the fee migration is applied.
 const TERMS_VERSION = 2;
-const EFFECTIVE_DATE = "[EFFECTIVE DATE]";
+const EFFECTIVE_DATE = "November 1, 2026";
 export default function Terms() {
   return (
     <div className="docs-layout">
