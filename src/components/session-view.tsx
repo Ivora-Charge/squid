@@ -81,9 +81,7 @@ export function SessionView({
       const timeout = setTimeout(() => controller?.abort(), 20000);
       try {
         const response = await fetch(`/api/sessions/${initial.id}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "sync" }),
+          cache: "no-store",
           signal: controller.signal,
         });
         const result = await response.json();
@@ -110,7 +108,7 @@ export function SessionView({
         }
       } finally {
         clearTimeout(timeout);
-        if (!canceled) timer = setTimeout(tick, 6000);
+        if (!canceled) timer = setTimeout(tick, 5000);
       }
     }
     void tick();

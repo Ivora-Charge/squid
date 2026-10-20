@@ -4,6 +4,7 @@ import type { ChargeSession } from "@/lib/types";
 const mocks = vi.hoisted(() => ({
   session: {} as ChargeSession,
   reconcile: vi.fn(),
+  syncIfStale: vi.fn(),
   guest: vi.fn(),
   writes: vi.fn(),
 }));
@@ -28,6 +29,7 @@ vi.mock("@/lib/server/security", async (original) => ({
 vi.mock("@/lib/server/sessions", async (original) => ({
   ...(await original<typeof import("@/lib/server/sessions")>()),
   reconcile: mocks.reconcile,
+  syncIfStale: mocks.syncIfStale,
   loadSession: async () => mocks.session,
 }));
 import { POST } from "@/app/api/sessions/[id]/route";
@@ -46,6 +48,7 @@ beforeEach(() => {
   } as ChargeSession;
   mocks.guest.mockResolvedValue(undefined);
   mocks.reconcile.mockRejectedValue(new LockBusyError());
+  mocks.syncIfStale.mockImplementation(async () => mocks.session);
 });
 afterEach(() => vi.unstubAllEnvs());
 function request(action: string, origin = "https://squid.example") {
@@ -56,9 +59,10 @@ function request(action: string, origin = "https://squid.example") {
   });
 }
 const context = () => ({ params: Promise.resolve({ id }) });
-it("returns confirmed session data when another worker is reconciling", async () => {
+it("returns the stored snapshot for a sync request without reconciling", async () => {
   const response = await POST(request("sync"), context());
-  expect(response.status).toBe(202);
+  expect(response.status).toBe(200);
+  expect(mocks.reconcile).not.toHaveBeenCalled();
   expect(response.headers.get("Cache-Control")).toBe("private, no-store");
   const body = await response.json();
   expect(body.session).toMatchObject({
@@ -81,7 +85,7 @@ it("persists and acknowledges a stop request while reconciliation is busy", asyn
 });
 it("does not hide a real reconciliation failure as a busy session", async () => {
   mocks.reconcile.mockRejectedValue(new Error("private processor failure"));
-  const response = await POST(request("sync"), context());
+  const response = await POST(request("stop"), context());
   expect(response.status).toBe(503);
   expect(await response.text()).not.toContain("private processor failure");
 });
