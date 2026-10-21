@@ -2,9 +2,18 @@ name: Verify Squid
 on: [push, pull_request]
 permissions:
   contents: read
+# One run per workflow and PR: a new push to a PR cancels its older run.
+# Pushes to branches (preproduction, main) are never cancelled, so every
+# merge commit is verified.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   verify:
     runs-on: ubuntu-latest
+    # Usually about 3 minutes; stop a stuck run instead of waiting for the 6-hour default.
+    timeout-minutes: 15
     env:
       # Obvious dummy test values, not secrets: the e2e run expects the Stripe
       # webhook to reject unsigned requests with 400, which needs a secret set.
