@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 const [command = "register", argument] = process.argv.slice(2);
 const base = (
-  process.env.IVORA_API_URL || "https://api.ivoracharge.co"
+  process.env.IVORA_API_URL || "https://api.ivoracharge.com"
 ).replace(/\/$/, "");
 const tenant = process.env.IVORA_TENANT_ID;
 const key = process.env.IVORA_API_KEY;
