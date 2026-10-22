@@ -20,6 +20,19 @@ vi.mock("@/lib/server/db", () => {
   // A chainable stand-in for the Supabase query builder. Each query is
   // recorded and resolved through mocks.result(table, calls).
   function from(table: string) {
+    // The admin lookup lists only admin@example.com, whatever a test returns
+    // for other tables.
+    if (table === "squid_admins") {
+      const admins: Record<string, unknown> = {
+        select: () => admins,
+        eq: () => admins,
+        maybeSingle: async () => ({
+          data: { email: "admin@example.com" },
+          error: null,
+        }),
+      };
+      return admins;
+    }
     const query: Query = { table, calls: [] };
     mocks.queries.push(query);
     const builder: Record<string, unknown> = new Proxy(
@@ -80,7 +93,7 @@ import { GET as cron } from "@/app/api/cron/newsletter/route";
 
 const admin = {
   id: "10000000-0000-4000-8000-000000000001",
-  email: "mingcan@ivoracharge.com",
+  email: "admin@example.com",
   email_confirmed_at: "2026-01-01T00:00:00Z",
 } as User;
 const host = {

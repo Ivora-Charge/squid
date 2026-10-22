@@ -135,11 +135,21 @@ Charger cards and guest pages automatically select a photograph from the Wikiped
 
 The **Feedback** button is available throughout Squid, including inside dialogs. The “Help Squid grow” survey accepts a message, category, optional experience rating, and optional email. Feedback is saved in `squid_feedback`; page context excludes query strings, URL fragments, and private session identifiers. Submissions are validated, throttled, and protected against cross-origin requests. Retrying a submission with the same ID does not duplicate or overwrite it.
 
-The operator's admin account (a verified email set in `src/lib/server/admin.ts` and the admin SQL functions) can open `/admin` to search host workspaces, review feedback, change its status, and review admin activity. Admin authorization uses the authenticated, confirmed email returned by Supabase, never client-provided roles or profile metadata. Ordinary hosts and guests cannot read admin data or call admin actions.
+Administrators (verified emails listed in the `squid_admins` table, see below) can open `/admin` to search host workspaces, review feedback, change its status, and review admin activity. Admin authorization uses the authenticated, confirmed email returned by Supabase, never client-provided roles or profile metadata. Ordinary hosts and guests cannot read admin data or call admin actions.
 
 **Act as tenant** opens a host dashboard for up to one hour. Squid retains the administrator’s real login, stores a random access token in an HTTP-only cookie, and checks its hash, actor, expiry, and revocation on the server. A banner identifies the tenant and offers **Return to admin**. Host requests also carry the page’s access ID, so forms in another tab cannot act in a different workspace after a tenant switch. Tenant requests are recorded before they execute; the log does not imply that each requested action succeeded. Password changes remain tied to the real signed-in account and are blocked during tenant access. Signing out revokes tenant access. Admin pages do not initialize analytics.
 
-Apply `202610010001_feedback_admin.sql` before deploying this feature. Feedback, tenant access, and the append-only audit log are service-only tables with RLS; browser roles cannot read or write them or execute the admin database functions.
+Apply `202610010001_feedback_admin.sql` and `202610220001_squid_admins.sql` before deploying this feature. Feedback, tenant access, and the append-only audit log are service-only tables with RLS; browser roles cannot read or write them or execute the admin database functions.
+
+#### Naming your administrators
+
+Each deployment chooses its own admins; no address ships in the code. An admin is a user with a confirmed email that is listed (lower-cased) in the service-only `squid_admins` table. The app and every admin SQL function check that same table, and an unverified email is never an admin.
+
+1. Set `ADMIN_EMAILS` to a comma-separated list, for example `ADMIN_EMAILS=you@example.com,ops@example.com`.
+2. Apply the migrations (`npm run db:migrate`). The migration creates the table empty and seeds nothing.
+3. Run `npm run admins:set` (or `node --env-file=.env scripts/set-admins.mjs`). It upserts `ADMIN_EMAILS` into `squid_admins` using the service role and can be re-run safely. Or insert a row yourself: `insert into public.squid_admins(email) values ('you@example.com');`.
+
+`ADMIN_EMAILS` is only the input to that script; it grants nothing at request time. Between the migration and the seed, signed-in users see an "Administrator access required" message at `/admin`. To remove an admin, delete the row from `squid_admins`.
 
 ### Host newsletter
 

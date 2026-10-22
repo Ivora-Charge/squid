@@ -1,4 +1,4 @@
-import { notFound, redirect } from "next/navigation";
+import { redirect } from "next/navigation";
 import { AdminDashboard } from "@/components/admin-dashboard";
 import { adminSummary, adminTenants, isAdmin } from "@/lib/server/admin";
 import { user } from "@/lib/server/db";
@@ -14,7 +14,18 @@ export default async function AdminPage() {
   if (!supabaseConfigured()) redirect("/login");
   const actor = await user();
   if (!actor) redirect("/login");
-  if (!isAdmin(actor)) notFound();
+  if (!(await isAdmin(actor)))
+    return (
+      <main className="admin-denied">
+        <h1>Administrator access required</h1>
+        <p>
+          This account is not an administrator. If you operate this deployment,
+          add your email to ADMIN_EMAILS and run scripts/set-admins.mjs, then
+          reload.
+        </p>
+        <a href="/dashboard">Back to dashboard</a>
+      </main>
+    );
   const [summary, tenants] = await Promise.all([
     adminSummary(),
     adminTenants(),

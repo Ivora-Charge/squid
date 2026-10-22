@@ -266,8 +266,8 @@ function rpcResult<T>(result: {
     throw new HttpError(409, result.error.message);
   return checked(result);
 }
-function requireNewsletterAdmin(actor: User) {
-  if (!isAdmin(actor))
+async function requireNewsletterAdmin(actor: User) {
+  if (!(await isAdmin(actor)))
     throw new HttpError(403, "Administrator access required.");
 }
 
@@ -355,7 +355,7 @@ export async function createIssue(
   actor: User,
   input: z.infer<typeof issueInput>,
 ) {
-  requireNewsletterAdmin(actor);
+  await requireNewsletterAdmin(actor);
   issueBlocks(input.body);
   const row = checked(
     await db()
@@ -372,7 +372,7 @@ export async function saveIssue(
   id: string,
   input: z.infer<typeof issueInput>,
 ) {
-  requireNewsletterAdmin(actor);
+  await requireNewsletterAdmin(actor);
   issueBlocks(input.body);
   const row = checked(
     await db()
@@ -413,7 +413,7 @@ export async function previewIssue(id: string): Promise<NewsletterPreview> {
 }
 // Test sends go only to the signed-in administrator.
 export async function sendTestIssue(actor: User, id: string) {
-  requireNewsletterAdmin(actor);
+  await requireNewsletterAdmin(actor);
   assertSendingAllowed();
   const issue = await loadIssue(id);
   if (issue.status !== "draft")
@@ -455,7 +455,7 @@ export async function sendTestIssue(actor: User, id: string) {
     );
 }
 export async function approveIssue(actor: User, id: string, hash: string) {
-  requireNewsletterAdmin(actor);
+  await requireNewsletterAdmin(actor);
   rpcResult(
     await db().rpc("squid_newsletter_approve", {
       admin_id: actor.id,
@@ -465,7 +465,7 @@ export async function approveIssue(actor: User, id: string, hash: string) {
   );
 }
 export async function startSend(actor: User, id: string) {
-  requireNewsletterAdmin(actor);
+  await requireNewsletterAdmin(actor);
   assertSendingAllowed();
   const recipients = rpcResult(
     await db().rpc("squid_newsletter_start_send", {

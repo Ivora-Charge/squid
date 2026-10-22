@@ -147,7 +147,7 @@ $$;
 create or replace function public.squid_newsletter_approve(admin_id uuid,target_id uuid,content_hash text)
 returns void language plpgsql security definer set search_path = public,pg_temp as $$
 begin
-  if not exists(select 1 from auth.users where id=admin_id and lower(email)='mingcan@ivoracharge.com' and email_confirmed_at is not null) then
+  if not exists(select 1 from public.squid_admins a join auth.users u on lower(u.email) = a.email where u.id = admin_id and u.email_confirmed_at is not null) then
     raise insufficient_privilege using message='Administrator access required';
   end if;
   update squid_newsletter_issues set status='approved',approved_by=admin_id,approved_at=now(),approved_hash=content_hash
@@ -163,7 +163,7 @@ create or replace function public.squid_newsletter_start_send(admin_id uuid,targ
 returns integer language plpgsql security definer set search_path = public,pg_temp as $$
 declare recipients integer;
 begin
-  if not exists(select 1 from auth.users where id=admin_id and lower(email)='mingcan@ivoracharge.com' and email_confirmed_at is not null) then
+  if not exists(select 1 from public.squid_admins a join auth.users u on lower(u.email) = a.email where u.id = admin_id and u.email_confirmed_at is not null) then
     raise insufficient_privilege using message='Administrator access required';
   end if;
   update squid_newsletter_issues set status='sending',send_started_at=now()
