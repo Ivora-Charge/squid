@@ -146,7 +146,7 @@ export async function ivora<T>(
   key?: string,
 ): Promise<T> {
   const origin = new URL(
-    process.env.IVORA_API_URL || "https://api.ivoracharge.co",
+    process.env.IVORA_API_URL || "https://api.ivoracharge.com",
   );
   if (origin.protocol !== "https:") throw new Error("Ivora requires HTTPS.");
   const response = await fetch(new URL(path, origin.origin), {

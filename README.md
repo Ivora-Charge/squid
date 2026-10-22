@@ -40,7 +40,7 @@ npm run dev
 | `SUPABASE_DB_URL`                                               | Only needed to run the migration command. Use the direct or session pooler connection string.            |
 | `RESEND_API_KEY`                                                | Optional server-only key for Squid-branded sign-in emails.                                               |
 | `RESEND_FROM_EMAIL`                                             | Sender on your verified domain, such as `Squid by Ivora <hello@squidcharge.io>`.                         |
-| `IVORA_API_URL`                                                 | Ivora API origin. The supplied `.co` endpoint is preproduction.                                          |
+| `IVORA_API_URL`                                                 | Ivora API origin. Defaults to production, `https://api.ivoracharge.com`; set your own project's URL.     |
 | `IVORA_API_KEY`, `IVORA_TENANT_ID`                              | Server-only credentials for Squid's shared fleet account.                                                |
 | `OCPP_URL_PREFIX`                                               | Optional secure OCPP URL prefix shown to hosts. Squid appends the station identity.                      |
 | `IVORA_WEBHOOK_SECRET`                                          | Signing secret printed once by `npm run ivora:webhook -- register <url>`. Enables Ivora webhooks.        |
@@ -135,7 +135,7 @@ Charger cards and guest pages automatically select a photograph from the Wikiped
 
 The **Feedback** button is available throughout Squid, including inside dialogs. The “Help Squid grow” survey accepts a message, category, optional experience rating, and optional email. Feedback is saved in `squid_feedback`; page context excludes query strings, URL fragments, and private session identifiers. Submissions are validated, throttled, and protected against cross-origin requests. Retrying a submission with the same ID does not duplicate or overwrite it.
 
-The verified account `mingcan@ivoracharge.com` can open `/admin` to search host workspaces, review feedback, change its status, and review admin activity. Admin authorization uses the authenticated, confirmed email returned by Supabase, never client-provided roles or profile metadata. Ordinary hosts and guests cannot read admin data or call admin actions.
+The operator's admin account (a verified email set in `src/lib/server/admin.ts` and the admin SQL functions) can open `/admin` to search host workspaces, review feedback, change its status, and review admin activity. Admin authorization uses the authenticated, confirmed email returned by Supabase, never client-provided roles or profile metadata. Ordinary hosts and guests cannot read admin data or call admin actions.
 
 **Act as tenant** opens a host dashboard for up to one hour. Squid retains the administrator’s real login, stores a random access token in an HTTP-only cookie, and checks its hash, actor, expiry, and revocation on the server. A banner identifies the tenant and offers **Return to admin**. Host requests also carry the page’s access ID, so forms in another tab cannot act in a different workspace after a tenant switch. Tenant requests are recorded before they execute; the log does not imply that each requested action succeeded. Password changes remain tied to the real signed-in account and are blocked during tenant access. Signing out revokes tenant access. Admin pages do not initialize analytics.
 
