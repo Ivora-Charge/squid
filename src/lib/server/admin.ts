@@ -14,19 +14,28 @@ import type {
   Tenant,
 } from "../admin-types";
 
-export const ADMIN_EMAIL = "mingcan@ivoracharge.com";
 export const TENANT_COOKIE = "squid_tenant_access";
-export function isAdmin(
+// Admins are the verified users listed in the squid_admins table, the same
+// list the SQL admin functions check. ADMIN_EMAILS only feeds the table
+// through scripts/set-admins.mjs; it never grants access by itself. Any
+// lookup failure (including a table that is not migrated yet) means "not an
+// admin".
+export async function isAdmin(
   actor: Pick<User, "email" | "email_confirmed_at"> | null,
 ) {
-  return Boolean(
-    actor?.email_confirmed_at && actor.email?.toLowerCase() === ADMIN_EMAIL,
-  );
+  const email = actor?.email?.trim().toLowerCase();
+  if (!actor?.email_confirmed_at || !email) return false;
+  const { data, error } = await db()
+    .from("squid_admins")
+    .select("email")
+    .eq("email", email)
+    .maybeSingle();
+  return !error && data?.email === email;
 }
 export async function requireAdmin() {
   const actor = supabaseConfigured() ? await user() : null;
   if (!actor) throw new HttpError(401, "Please sign in to continue.");
-  if (!isAdmin(actor))
+  if (!(await isAdmin(actor)))
     throw new HttpError(403, "Administrator access required.");
   return actor;
 }
@@ -43,7 +52,7 @@ export async function hostContext(
   actor: User,
 ): Promise<{ host: User; actingAs: ActingAs | null }> {
   // Browser cookies and user-editable profile metadata cannot grant a role.
-  if (!isAdmin(actor)) return { host: actor, actingAs: null };
+  if (!(await isAdmin(actor))) return { host: actor, actingAs: null };
   const token = (await cookies()).get(TENANT_COOKIE)?.value;
   if (!token) return { host: actor, actingAs: null };
   if (!/^[a-f0-9]{64}$/.test(token)) return accessEnded();
@@ -128,7 +137,7 @@ export async function startTenantAccess(
   tenantId: string,
   reason: string,
 ) {
-  if (!isAdmin(actor))
+  if (!(await isAdmin(actor)))
     throw new HttpError(403, "Administrator access required.");
   if (tenantId === actor.id)
     throw new HttpError(400, "Use your own host workspace for this account.");
@@ -152,7 +161,7 @@ export async function endTenantAccess(actor: User | null) {
   const jar = await cookies();
   const token = jar.get(TENANT_COOKIE)?.value;
   try {
-    if (actor && isAdmin(actor)) {
+    if (actor && (await isAdmin(actor))) {
       rpcResult(
         await db().rpc("squid_end_tenant_access", {
           admin_id: actor.id,

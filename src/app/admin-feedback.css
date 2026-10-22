@@ -652,3 +652,8 @@
   border-radius: 8px;
   background: #111513;
 }
+.admin-denied {
+  max-width: 32rem;
+  margin: 4rem auto;
+  padding: 0 1rem;
+}

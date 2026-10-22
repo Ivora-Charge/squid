@@ -37,8 +37,11 @@ beforeAll(async () => {
     .sort())
     await pg.exec(await readFile(`supabase/migrations/${file}`, "utf8"));
   await pg.query(
-    "insert into auth.users(id,email,email_confirmed_at) values($1,'Sub@Example.com',now()),($2,'quiet@example.com',now()),($3,'new@example.com',null),($4,'mingcan@ivoracharge.com',now())",
+    "insert into auth.users(id,email,email_confirmed_at) values($1,'Sub@Example.com',now()),($2,'quiet@example.com',now()),($3,'new@example.com',null),($4,'admin@example.com',now())",
     [subscriber, quiet, unconfirmed, admin],
+  );
+  await pg.query(
+    "insert into squid_admins(email) values ('admin@example.com')",
   );
 }, 20000);
 afterAll(async () => {

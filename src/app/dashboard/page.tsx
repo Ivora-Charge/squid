@@ -90,7 +90,7 @@ export default async function DashboardPage() {
         payoutsReady: account.ready,
         stripeConnected: Boolean(account.id),
         status,
-        isAdmin: isAdmin(actor),
+        isAdmin: await isAdmin(actor),
         actingAs,
         newsletter,
       }}

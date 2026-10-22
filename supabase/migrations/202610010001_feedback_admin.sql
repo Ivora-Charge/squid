@@ -97,7 +97,7 @@ create or replace function public.squid_start_tenant_access(admin_id uuid,target
 returns uuid language plpgsql security definer set search_path = public,pg_temp as $$
 declare access_id uuid;
 begin
-  perform 1 from auth.users where id=admin_id and lower(email)='mingcan@ivoracharge.com' and email_confirmed_at is not null for update;
+  perform 1 from auth.users u where u.id=admin_id and u.email_confirmed_at is not null and exists(select 1 from public.squid_admins a where a.email = lower(u.email)) for update of u;
   if not found then raise insufficient_privilege using message='Administrator access required'; end if;
   if admin_id=target_id or not exists(select 1 from auth.users where id=target_id and email is not null) then
     raise no_data_found using message='Tenant not found';
@@ -130,7 +130,7 @@ $$;
 create or replace function public.squid_admin_feedback_status(admin_id uuid,feedback_id uuid,new_status text)
 returns void language plpgsql security definer set search_path = public,pg_temp as $$
 begin
-  if not exists(select 1 from auth.users where id=admin_id and lower(email)='mingcan@ivoracharge.com' and email_confirmed_at is not null) then
+  if not exists(select 1 from public.squid_admins a join auth.users u on lower(u.email) = a.email where u.id = admin_id and u.email_confirmed_at is not null) then
     raise insufficient_privilege using message='Administrator access required';
   end if;
   update squid_feedback set status=new_status,updated_at=now() where id=feedback_id;

@@ -17,8 +17,11 @@ beforeAll(async () => {
     await pg.exec(await readFile(`supabase/migrations/${file}`, "utf8"));
   }
   await pg.query(
-    "insert into auth.users(id,email,email_confirmed_at) values($1,'host-a@example.com',now()),($2,'host-b@example.com',now()),($3,'mingcan@ivoracharge.com',now())",
+    "insert into auth.users(id,email,email_confirmed_at) values($1,'host-a@example.com',now()),($2,'host-b@example.com',now()),($3,'admin@example.com',now())",
     [a, b, admin],
+  );
+  await pg.query(
+    "insert into squid_admins(email) values ('admin@example.com')",
   );
   await pg.query(
     `insert into squid_properties(id,host_id,name,address,city,state,latitude,longitude,station_name,rate_cents) values($1,$2,'Private cabin','1 Main St','Asheville','NC',35,-82,'sq-private',35)`,
@@ -277,6 +280,56 @@ describe("feedback and administrator database permissions", () => {
         "update auth.users set email_confirmed_at=now() where id=$1",
         [admin],
       );
+    }
+  });
+  it("honours the squid_admins table: unlisted users are refused, removing a row revokes access", async () => {
+    await pg.query("delete from squid_admins");
+    try {
+      await service(async () => {
+        await expect(
+          pg.query("select squid_admin_feedback_status($1,$2,'resolved')", [
+            admin,
+            "30000000-0000-4000-8000-000000000009",
+          ]),
+        ).rejects.toThrow(/Administrator access required/);
+        await expect(
+          pg.query("select squid_start_tenant_access($1,$2,$3,'Support')", [
+            admin,
+            a,
+            firstHash,
+          ]),
+        ).rejects.toThrow(/Administrator access required/);
+      });
+      await pg.query(
+        "insert into squid_admins(email) values ('admin@example.com')",
+      );
+      await service(async () => {
+        await expect(
+          pg.query("select squid_admin_feedback_status($1,$2,'resolved')", [
+            admin,
+            "30000000-0000-4000-8000-000000000009",
+          ]),
+        ).rejects.toThrow(/Feedback not found/);
+      });
+    } finally {
+      await pg.query(
+        "insert into squid_admins(email) values ('admin@example.com') on conflict do nothing",
+      );
+    }
+  });
+  it("keeps squid_admins service-only and lower-case", async () => {
+    await expect(
+      pg.query("insert into squid_admins(email) values ('Mixed@Example.com')"),
+    ).rejects.toThrow();
+    for (const role of ["anon", "authenticated"]) {
+      await pg.exec(`set role ${role}`);
+      try {
+        await expect(pg.query("select * from squid_admins")).rejects.toThrow(
+          /permission denied/,
+        );
+      } finally {
+        await pg.exec("reset role");
+      }
     }
   });
   it("atomically switches workspaces, keeps one active lease, and audits access", async () => {

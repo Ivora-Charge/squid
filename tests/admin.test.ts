@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
   updateUser: vi.fn(),
   signOut: vi.fn(),
   jar: new Map<string, string>(),
+  admins: new Set<string>(),
+  adminError: false,
 }));
 vi.mock("next/headers", () => ({
   cookies: async () => ({
@@ -61,7 +63,7 @@ import { POST as logout } from "@/app/auth/logout/route";
 
 const owner = {
   id: "10000000-0000-4000-8000-000000000001",
-  email: "mingcan@ivoracharge.com",
+  email: "admin@example.com",
   email_confirmed_at: "2026-01-01T00:00:00Z",
 } as User;
 const tenant = {
@@ -111,7 +113,25 @@ beforeEach(() => {
   mocks.setCookie.mockImplementation((name: string, value: string) =>
     mocks.jar.set(name, value),
   );
+  mocks.admins.clear();
+  mocks.admins.add("admin@example.com");
+  mocks.adminError = false;
   mocks.from.mockImplementation((table: string) => {
+    if (table === "squid_admins") {
+      let email = "";
+      const query = {
+        select: () => query,
+        eq: (_column: string, value: string) => ((email = value), query),
+        maybeSingle: async () =>
+          mocks.adminError
+            ? { data: null, error: { message: "relation does not exist" } }
+            : {
+                data: mocks.admins.has(email) ? { email } : null,
+                error: null,
+              },
+      };
+      return query;
+    }
     if (table === "squid_admin_audit") return { insert: mocks.audit };
     if (table !== "squid_tenant_access")
       throw new Error(`Unexpected table ${table}`);
@@ -129,10 +149,12 @@ afterEach(() => vi.unstubAllEnvs());
 
 describe("verified administrator identity", () => {
   it("requires the confirmed account email and ignores user-editable role metadata", async () => {
-    expect(isAdmin({ ...owner, email: "Mingcan@IvoraCharge.com" })).toBe(true);
-    expect(isAdmin({ ...owner, email_confirmed_at: undefined })).toBe(false);
+    expect(await isAdmin({ ...owner, email: "Admin@Example.com" })).toBe(true);
+    expect(await isAdmin({ ...owner, email_confirmed_at: undefined })).toBe(
+      false,
+    );
     expect(
-      isAdmin({
+      await isAdmin({
         ...tenant,
         user_metadata: { role: "admin", email: owner.email },
       } as User),
@@ -148,7 +170,7 @@ describe("verified administrator identity", () => {
     expect(
       await requireHost(request("/api/host/properties", {}, "self")),
     ).toEqual(tenant);
-    expect(mocks.from).not.toHaveBeenCalled();
+    expect(mocks.from).not.toHaveBeenCalledWith("squid_tenant_access");
     expect(mocks.getUser).not.toHaveBeenCalled();
   });
   it("retains the actual admin identity while using the tenant's host identity", async () => {
@@ -158,6 +180,32 @@ describe("verified administrator identity", () => {
     expect(
       await requireHost(request("/api/host/properties", {}, leaseId)),
     ).toEqual(tenant);
+  });
+});
+
+describe("configured administrators", () => {
+  it("refuses a non-admin, an unlisted verified email, and an unverified listed email", async () => {
+    expect(await isAdmin(tenant)).toBe(false);
+    expect(await isAdmin(null)).toBe(false);
+    mocks.admins.add("later@example.com");
+    expect(await isAdmin({ ...owner, email: "later@example.com" })).toBe(true);
+    expect(
+      await isAdmin({
+        email: "later@example.com",
+        email_confirmed_at: null,
+      } as unknown as User),
+    ).toBe(false);
+    mocks.admins.delete("later@example.com");
+    expect(await isAdmin({ ...owner, email: "later@example.com" })).toBe(false);
+  });
+  it("never grants admin from ADMIN_EMAILS without a table row", async () => {
+    vi.stubEnv("ADMIN_EMAILS", tenant.email!);
+    expect(await isAdmin(tenant)).toBe(false);
+  });
+  it("fails closed with a 403 when the table is unavailable", async () => {
+    mocks.adminError = true;
+    expect(await isAdmin(owner)).toBe(false);
+    await expect(requireAdmin()).rejects.toMatchObject({ status: 403 });
   });
 });
 
