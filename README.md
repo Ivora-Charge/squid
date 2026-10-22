@@ -125,7 +125,7 @@ Squid sets a charger password only before the charger connects: Ivora stores it 
 
 Hosts save their charger and receive its OCPP connection details before starting Stripe payout onboarding. Once the charger appears online, its setup page offers Stripe Connect; retries reuse the saved charger, and both Stripe return and refresh URLs reopen that charger's setup. Squid checks the actual account status before publishing. Preview the first-host flow at `/demo?onboarding=1`.
 
-The app connects chargers to Ivora's OCPP service. Vercel runs the web application and server routes; it does not host persistent OCPP WebSockets. API schema: [Ivora OpenAPI](https://api.ivoracharge.co/openapi.json).
+The app connects chargers to Ivora's OCPP service. Vercel runs the web application and server routes; it does not host persistent OCPP WebSockets. API schema: [Ivora OpenAPI](https://api.ivoracharge.com/openapi.json). Developer docs: [Ivora for developers](https://www.ivoracharge.com/developers).
 
 ### City photos
 
