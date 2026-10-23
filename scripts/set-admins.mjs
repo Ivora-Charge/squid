@@ -16,26 +16,30 @@ export function parseAdminEmails(value = "") {
   ];
 }
 
-async function main() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+/** @param {Record<string, string | undefined>} [env] */
+export function resolveSupabaseUrl(env = process.env) {
+  return env.SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL;
+}
+
+/**
+ * Returns the number of admin emails written; throws Error with a safe
+ * message on any problem.
+ * @param {Record<string, string | undefined>} [env]
+ * @param {typeof createClient} [create]
+ */
+export async function seedAdmins(env = process.env, create = createClient) {
+  const url = resolveSupabaseUrl(env);
+  const key = env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) {
-    console.error(
-      "Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env.",
-    );
-    process.exit(1);
+    throw new Error("Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env.");
   }
-  const emails = parseAdminEmails(process.env.ADMIN_EMAILS);
-  if (!emails.length) {
-    console.error("ADMIN_EMAILS is empty. Nothing to do.");
-    process.exit(1);
-  }
+  const emails = parseAdminEmails(env.ADMIN_EMAILS);
+  if (!emails.length) throw new Error("ADMIN_EMAILS is empty. Nothing to do.");
   const invalid = emails.filter((email) => !/^[^\s@]+@[^\s@]+$/.test(email));
   if (invalid.length) {
-    console.error(`ADMIN_EMAILS has ${invalid.length} invalid entries.`);
-    process.exit(1);
+    throw new Error(`ADMIN_EMAILS has ${invalid.length} invalid entries.`);
   }
-  const supabase = createClient(url, key, {
+  const supabase = create(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
   const { error } = await supabase.from("squid_admins").upsert(
@@ -43,12 +47,21 @@ async function main() {
     { onConflict: "email", ignoreDuplicates: true },
   );
   if (error) {
-    console.error(
+    throw new Error(
       `Could not write squid_admins (${error.code ?? "error"}). Apply the 202610220001_squid_admins.sql migration first.`,
     );
+  }
+  return emails.length;
+}
+
+async function main() {
+  try {
+    const count = await seedAdmins();
+    console.log(`squid_admins now includes ${count} admin email(s).`);
+  } catch (error) {
+    console.error(error.message);
     process.exit(1);
   }
-  console.log(`squid_admins now includes ${emails.length} admin email(s).`);
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) await main();

@@ -147,7 +147,7 @@ Each deployment chooses its own admins; no address ships in the code. An admin i
 
 1. Set `ADMIN_EMAILS` to a comma-separated list, for example `ADMIN_EMAILS=you@example.com,ops@example.com`.
 2. Apply the migrations (`npm run db:migrate`). The migration creates the table empty and seeds nothing.
-3. Run `npm run admins:set` (or `node --env-file=.env scripts/set-admins.mjs`). It upserts `ADMIN_EMAILS` into `squid_admins` using the service role and can be re-run safely. Or insert a row yourself: `insert into public.squid_admins(email) values ('you@example.com');`.
+3. Run `npm run admins:set` (or `node --env-file=.env scripts/set-admins.mjs`). It upserts `ADMIN_EMAILS` into `squid_admins` using the service role (it reads `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` from `.env`, falling back to `NEXT_PUBLIC_SUPABASE_URL` if that is how your deployment names the URL) and can be re-run safely. Or insert a row yourself: `insert into public.squid_admins(email) values ('you@example.com');`.
 
 `ADMIN_EMAILS` is only the input to that script; it grants nothing at request time. Between the migration and the seed, signed-in users see an "Administrator access required" message at `/admin`. To remove an admin, delete the row from `squid_admins`.
 
