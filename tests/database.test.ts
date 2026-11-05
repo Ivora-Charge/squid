@@ -152,6 +152,26 @@ describe("Supabase migration and row-level isolation", () => {
     }
   });
 });
+describe("charger IDs", () => {
+  it("keeps existing chargers on a null charger ID and validates new ones", async () => {
+    await pg.exec("reset role");
+    expect(
+      (
+        await pg.query("select charger_id from squid_properties where id=$1", [
+          property,
+        ])
+      ).rows,
+    ).toEqual([{ charger_id: null }]);
+    const set = (value: string) =>
+      pg.query("update squid_properties set charger_id=$2 where id=$1", [
+        property,
+        value,
+      ]);
+    await expect(set("has space")).rejects.toThrow(/charger_id_format/);
+    await set("sq-private");
+    await set(null as unknown as string);
+  });
+});
 describe("price per kWh", () => {
   const premium = "20000000-0000-4000-8000-000000000002";
   const insert = (id: string, station: string, rate: number) =>

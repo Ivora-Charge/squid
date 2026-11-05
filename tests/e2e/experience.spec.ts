@@ -322,9 +322,9 @@ test("host can add a demo charger and filter it", async ({
   await expect(page.getByLabel("Longitude")).toHaveCount(0);
   await expect(page.getByLabel("Time zone")).toHaveCount(0);
   await page.getByRole("button", { name: "Continue", exact: true }).click();
-  await expect(
-    page.getByLabel("Station identity", { exact: true }),
-  ).toHaveValue(/^bluebird-cabin-[a-f0-9]{6}$/);
+  await expect(page.getByLabel("Charger ID", { exact: true })).toHaveValue(
+    /^bluebird-cabin-[a-f0-9]{6}$/,
+  );
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await page
     .getByRole("dialog")
@@ -393,7 +393,7 @@ test("new hosts connect their charger before Stripe and editing an address clear
   await expect(
     page.getByRole("heading", { name: "Bluebird Cabin" }),
   ).toBeVisible();
-  await expect(page.getByText("OCPP station identity")).toBeVisible();
+  await expect(page.getByText("Charger ID (OCPP username)")).toBeVisible();
   await expect(page.getByText("Preset OCPP password")).toBeVisible();
   await expect(page.getByText("Next, set up your payouts")).toBeVisible();
   await expect(

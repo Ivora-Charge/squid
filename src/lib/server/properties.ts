@@ -6,6 +6,7 @@ import {
   getStation,
   IvoraError,
   locationRecordSchema,
+  stationAddress,
   stationSchema as stationRecordSchema,
   tariffRecordSchema,
 } from "./ivora";
@@ -13,7 +14,8 @@ import { payoutStatus } from "./stripe";
 import { HttpError } from "./security";
 import type { Property } from "../types";
 import { configureCredentials } from "./charger-credentials";
-import { stationConnectionUrl } from "./config";
+import { required, stationConnectionUrl } from "./config";
+import { chargerIdProblem } from "../onboarding";
 export const propertyInput = z.object({
   id: z.uuid(),
   name: z.string().trim().min(2).max(80),
@@ -28,8 +30,11 @@ export const propertyUpdate = propertyInput.omit({
   id: true,
   addressToken: true,
 });
+// A station registered with charger_id shows the address Ivora returned. One
+// registered earlier by a global name keeps its current address, including
+// the optional OCPP_URL_PREFIX override.
 export function withConnectionUrl(p: Property): Property {
-  if (!p.station_id) return p;
+  if (!p.station_id || p.charger_id) return p;
   return {
     ...p,
     ocpp_url: stationConnectionUrl(p.station_name, p.ocpp_url),
@@ -104,24 +109,36 @@ export async function provision(hostId: string, id: string): Promise<Property> {
       await save({ location_id: location.id });
     }
     if (!p.station_id) {
+      // New chargers register with charger_id: the charger's own OCPP identity
+      // in Squid's project, which is also its username. Ivora is retiring
+      // new registrations by global station name. The key moves to v3
+      // because the body changed; a station an earlier name request created
+      // is adopted through its external_reference.
+      const chargerId = p.station_name;
+      const problem = chargerIdProblem(chargerId, required("IVORA_TENANT_ID"));
+      if (problem) throw new HttpError(400, problem);
       const station = await createResource(
-        `${id}:station:v2`,
+        `${id}:station:v3`,
         "stations",
         stationRecordSchema,
         {
-          name: p.station_name,
+          charger_id: chargerId,
           location_id: p.location_id,
           connectors: 1,
           external_reference: reference,
         },
       );
+      const registered = station.charger_id ?? null;
       await save({
         station_id: station.id,
         connector_id: station.connectors[0]?.id ?? null,
-        ocpp_url: stationConnectionUrl(
-          p.station_name,
-          station.connection_url ?? null,
-        ),
+        charger_id: registered,
+        ocpp_url: registered
+          ? stationAddress(station)
+          : stationConnectionUrl(
+              p.station_name,
+              station.connection_url ?? null,
+            ),
       });
     }
     if (!p.tariff_id) {
@@ -153,10 +170,12 @@ export async function provision(hostId: string, id: string): Promise<Property> {
       const station = await getStation(p.station_id!);
       await save({
         connector_id: station.connectors[0]?.id ?? p.connector_id,
-        ocpp_url: stationConnectionUrl(
-          p.station_name,
-          station.connection_url ?? p.ocpp_url,
-        ),
+        ocpp_url: p.charger_id
+          ? (stationAddress(station) ?? p.ocpp_url)
+          : stationConnectionUrl(
+              p.station_name,
+              station.connection_url ?? p.ocpp_url,
+            ),
       });
     }
     return p;

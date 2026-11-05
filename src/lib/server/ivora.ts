@@ -12,6 +12,15 @@ export const stationSchema = z.object({
   location_id: z.number().nullable().optional(),
   // Default OCPP WebSocket URL for this station; custom domains publish their own.
   connection_url: z.string().optional(),
+  // The station's URL on each active custom OCPP domain of the project. A
+  // per-project station's has the project shape wss://<domain>/<project>/<charger id>.
+  custom_connection_urls: z
+    .array(z.object({ domain: z.string(), url: z.string() }))
+    .optional(),
+  // Set for a station registered with charger_id; null for a global name.
+  charger_id: z.string().nullable().optional(),
+  // The Basic authentication username the charger sends: charger_id, else name.
+  username: z.string().nullable().optional(),
   external_reference: z.string().nullable().optional(),
   connectors: z.array(
     z.object({
@@ -22,6 +31,13 @@ export const stationSchema = z.object({
   ),
 });
 export type Station = z.infer<typeof stationSchema>;
+// The address a host configures: the active custom domain's URL when the
+// project has one, else Ivora's default. Never built by Squid.
+export function stationAddress(station: Station) {
+  return (
+    station.custom_connection_urls?.[0]?.url ?? station.connection_url ?? null
+  );
+}
 export const locationRecordSchema = z.object({
   id: z.number(),
   name: z.string(),

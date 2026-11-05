@@ -256,6 +256,26 @@ describe("synchronous inventory creates", () => {
       "stations?name=sq-loft",
     );
   });
+  it("never adopts another station by charger ID when ours is taken", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        reply(409, { error: { code: "station_name_taken", message: "Taken" } }),
+      )
+      .mockResolvedValueOnce(reply(200, { data: [], next_cursor: 0 }));
+    const byChargerId = {
+      charger_id: "sq-loft",
+      location_id: 7,
+      connectors: 1,
+      external_reference: "property:abc",
+    };
+    await expect(
+      createResource("k5", "stations", record, byChargerId),
+    ).rejects.toMatchObject({ code: "station_name_taken" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String((fetchMock.mock.calls[1] as [URL])[0])).toContain(
+      "external_reference=",
+    );
+  });
   it("rethrows codes that are not recoverable by lookup", async () => {
     fetchMock.mockResolvedValueOnce(
       reply(422, { error: { code: "invalid_request", message: "Bad" } }),

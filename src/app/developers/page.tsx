@@ -30,7 +30,8 @@ export default function Developers() {
           <li>
             <strong>Add your property in Squid.</strong> Sign in, add your
             property, and Squid shows you three values made for your charger: a
-            station ID, a connection address, and a password.
+            connection address, a charger ID (also its username), and a
+            password.
           </li>
           <li>
             <strong>Paste them into your charger’s settings.</strong> Open your
@@ -39,7 +40,9 @@ export default function Developers() {
             (the standard language smart chargers use to talk to platforms like
             Squid — sometimes labeled “server” or “backend”), paste the three
             values, choose <strong>OCPP 1.6</strong> if it asks, and restart the
-            charger.
+            charger. The connection address already ends with your charger ID:
+            if your charger has a separate field for its ID and adds it to the
+            address itself, paste the address without that last part.
           </li>
           <li>
             <strong>Come back to Squid and refresh.</strong> When your charger

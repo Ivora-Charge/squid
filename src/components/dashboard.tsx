@@ -1793,6 +1793,9 @@ function ChargerSetup({
     pending: boolean;
   } | null>(null);
   const [done, setDone] = useState("");
+  // The charger's username: its charger ID, or the global station name it was
+  // registered with before charger IDs.
+  const username = p.charger_id ?? p.station_name;
   async function loadCredentials(signal?: AbortSignal) {
     if (demo) {
       setCredentials({ password: "DEMO2345DEMO6789", pending: false });
@@ -1891,19 +1894,6 @@ function ChargerSetup({
             its guest page.
           </p>
         )}
-        <label>
-          OCPP station identity
-          <div className="copy-field">
-            <input value={p.station_name} readOnly />
-            <button
-              className="icon-button"
-              aria-label="Copy station identity"
-              onClick={() => navigator.clipboard.writeText(p.station_name)}
-            >
-              <Copy size={17} />
-            </button>
-          </div>
-        </label>
         {p.ocpp_url ? (
           <label>
             OCPP connection URL
@@ -1924,6 +1914,25 @@ function ChargerSetup({
             contact your Squid operator if it’s still unavailable.
           </div>
         )}
+        {p.ocpp_url && (
+          <p className="fine-print">
+            Paste the whole URL. If your charger adds its ID to the server
+            address itself, leave the charger ID off the end.
+          </p>
+        )}
+        <label>
+          Charger ID (OCPP username)
+          <div className="copy-field">
+            <input value={username} readOnly />
+            <button
+              className="icon-button"
+              aria-label="Copy charger ID"
+              onClick={() => navigator.clipboard.writeText(username)}
+            >
+              <Copy size={17} />
+            </button>
+          </div>
+        </label>
         {credentials?.password ? (
           <label>
             Preset OCPP password
