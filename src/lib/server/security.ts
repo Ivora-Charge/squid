@@ -68,6 +68,22 @@ const IVORA_MESSAGES: Record<string, { status: number; message: string }> = {
     message:
       "Disconnect your charger before preparing its connection password.",
   },
+  // Squid registers new chargers by charger ID; these are Ivora's refusals.
+  station_name_taken: {
+    status: 409,
+    message:
+      "This charger ID is already registered. Contact Squid support and we’ll assign your charger a new one.",
+  },
+  project_urls_disabled: {
+    status: 503,
+    message:
+      "New chargers can’t be registered right now. Your property is saved; refresh setup later, or contact Squid support if this continues.",
+  },
+  global_charger_url_retired: {
+    status: 503,
+    message:
+      "New chargers can’t be registered right now. Your property is saved; refresh setup later, or contact Squid support if this continues.",
+  },
   request_in_progress: {
     status: 409,
     message: "This action is already in progress. Please retry shortly.",

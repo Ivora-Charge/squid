@@ -13,6 +13,20 @@ export function stationIdentity(name: string, id: string) {
   return `${readable || "squid"}-${id.replaceAll("-", "").slice(0, 6)}`;
 }
 
+// Ivora's rules for a per-project charger ID: letters, digits, underscores and
+// hyphens, starting with a letter or digit, and at most 36 characters together
+// with the p<project id>- prefix Ivora keeps for it internally.
+const CHARGER_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/;
+export const CHARGER_ID_NAME_LIMIT = 36;
+export function chargerIdProblem(chargerId: string, projectId: string) {
+  if (!CHARGER_ID.test(chargerId))
+    return "A charger ID uses letters, numbers, hyphens and underscores, and starts with a letter or number.";
+  const limit = CHARGER_ID_NAME_LIMIT - `p${projectId}-`.length;
+  if (chargerId.length > limit)
+    return `A charger ID can be at most ${limit} characters.`;
+  return null;
+}
+
 export const demoAddresses = [
   {
     id: "forest",

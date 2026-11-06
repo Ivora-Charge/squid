@@ -79,6 +79,7 @@ export function AddCharger({
           slug: "demo",
           hold_cents: 2500,
           station_name: stationIdentity(form.name, id),
+          charger_id: stationIdentity(form.name, id),
           station_id: 3,
           connector_id: 3,
           location_id: 3,
@@ -148,12 +149,13 @@ export function AddCharger({
               </p>
             </div>
             <label>
-              Station identity
+              Charger ID
               <input readOnly value={stationIdentity(form.name, id)} />
             </label>
             <p className="fine-print">
-              A short name for your charger’s connection settings. Your password
-              will be prepared automatically.
+              Your charger’s ID in its OCPP settings, also used as its username.
+              Your connection address and password will be prepared
+              automatically.
             </p>
             <label>
               Connector type

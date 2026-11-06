@@ -24,7 +24,11 @@ export type Property = {
   max_kw: number;
   rate_cents: number;
   hold_cents: number;
+  // The charger's OCPP identity and username.
   station_name: string;
+  // Set when the station was registered with Ivora by charger_id (project
+  // address); null for a charger registered earlier by a global name.
+  charger_id: string | null;
   station_id: number | null;
   connector_id: number | null;
   location_id: number | null;

@@ -38,6 +38,10 @@ export function appUrl(request?: RequestLike) {
       : "http://localhost:3000")
   ).replace(/\/$/, "");
 }
+// OCPP_URL_PREFIX only applies to stations registered by a global name
+// (the older wss://<domain>/sp1/<name> shape). Stations registered with
+// charger_id show the address Ivora returns, which already uses the
+// project's custom domain.
 export function stationConnectionUrl(
   stationName: string,
   ivoraUrl: string | null,
