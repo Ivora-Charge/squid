@@ -49,9 +49,22 @@ describe.each(Object.entries(routes))("/api/cron/%s auth", (name, GET) => {
     expect(mocks.continueSending).not.toHaveBeenCalled();
   });
 
-  it("rejects every request when CRON_SECRET is unset", async () => {
-    vi.stubEnv("CRON_SECRET", "");
-    expect((await GET(request(name, "Bearer "))).status).toBe(401);
+  it.each([
+    ["empty", ""],
+    ["undefined", undefined],
+  ])("rejects when CRON_SECRET is %s", async (_label, value) => {
+    vi.stubEnv("CRON_SECRET", value);
+    // A real Headers object trims "Bearer " to "Bearer", which would fail the
+    // length check instead. This header equals the route's expected value
+    // exactly, so only the `!process.env.CRON_SECRET` guard can reject it.
+    const unsetSecretMatch = {
+      headers: { get: () => "Bearer " },
+    } as unknown as NextRequest;
+    mocks.continueSending.mockResolvedValue({ sent: 0 });
+    const response = await GET(unsetSecretMatch);
+    expect(response.status).toBe(401);
+    expect(mocks.db).not.toHaveBeenCalled();
+    expect(mocks.continueSending).not.toHaveBeenCalled();
     expect((await GET(request(name))).status).toBe(401);
   });
 
