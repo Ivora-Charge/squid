@@ -195,6 +195,12 @@ Ivora pushes signed `charging_session.status_changed`, `bill.finalized`, and `op
 
 ## Deploy on Vercel
 
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FIvora-Charge%2Fsquid&project-name=squid&repository-name=squid&env=NEXT_PUBLIC_APP_URL%2CSUPABASE_URL%2CSUPABASE_ANON_KEY%2CSUPABASE_SERVICE_ROLE_KEY%2CIVORA_API_KEY%2CIVORA_TENANT_ID%2COCPP_CREDENTIAL_KEY%2CSTRIPE_SECRET_KEY%2CSTRIPE_WEBHOOK_SECRET%2CCRON_SECRET&envDescription=Names%20of%20the%20required%20settings.%20Enter%20values%20in%20Vercel%27s%20form%2C%20never%20in%20this%20URL.&envLink=https%3A%2F%2Fgithub.com%2FIvora-Charge%2Fsquid%23connect-real-services)
+
+The button asks Vercel for the required variables only; enter values in Vercel's form and never paste keys or secrets into the button URL. It does not create the Supabase database, apply migrations, or register webhooks, so follow the steps below.
+
+The button does not ask for these, but a real deployment still needs them: `GOOGLE_MAPS_ADDRESS_API_KEY` (address search fails without it), `IVORA_WEBHOOK_SECRET` (the Ivora webhook returns 503 until it is set), `STRIPE_CONNECT_WEBHOOK_SECRET` (connected-account events), and `RESEND_API_KEY` with `RESEND_FROM_EMAIL` for Squid-branded sign-in emails, plus `NEWSLETTER_SIGNING_KEY`, `NEWSLETTER_POSTAL_ADDRESS` and `RESEND_WEBHOOK_SECRET` for the host newsletter. Optional: `IVORA_API_URL`, `OCPP_URL_PREFIX`, `PREVIEW_HOST_SUFFIX`, `SESSION_SYNC_WINDOW_SECONDS`, `NEWSLETTER_SENDING_ENABLED`, `NEWSLETTER_FROM_EMAIL`, the PostHog and Google Analytics IDs, and `SUPABASE_DB_URL` (migrations only).
+
 1. Import this repository with the Next.js preset and Node.js 22.x, matching the pinned runtime and CI.
 2. Set the environment variables above for the intended environment. Use separate Supabase, Stripe, and Ivora test resources for previews.
 3. Apply all Supabase migrations. Set `NEXT_PUBLIC_APP_URL` to the canonical HTTPS origin and add its Supabase callback and confirmation URLs. Configure the Resend sender if using custom email delivery.
@@ -205,6 +211,18 @@ Ivora pushes signed `charging_session.status_changed`, `bill.finalized`, and `op
 The every-minute job requires Vercel Pro or Enterprise under the current [Cron limits](https://vercel.com/docs/cron-jobs/usage-and-pricing). For a demo on Hobby, remove the cron entry. For real sessions, supply an external scheduler every minute with `Authorization: Bearer <CRON_SECRET>`; guest polling alone is insufficient because guests can close their browser.
 
 Reconciliation processes ten sessions per invocation, oldest first. This is a small-fleet reference implementation, not an unbounded job queue. Monitor session age and increase scheduling capacity before growing the fleet.
+
+### Runs serverless
+
+Squid needs no always-on server of its own. As the code works today:
+
+- Ivora holds the charger connections; Squid only calls Ivora's HTTP API and receives its webhooks.
+- Squid keeps its state in its own Supabase database, not on the function's disk.
+- Ivora webhooks are signature-verified and deduplicated by event ID (`squid_ivora_events`). Stripe webhooks are signature-verified; they are not recorded by event ID, but each one only triggers an idempotent reconciliation of the session.
+- Squid's writes to Ivora (starting and stopping sessions, charger credentials, inventory) go through one helper that sends an `Idempotency-Key` and saves the request, so a retry reuses the same key.
+- `/api/cron/reconcile` catches missed events.
+
+Ivora's serverless guide will be linked here once it is published.
 
 ### Squid preproduction
 
