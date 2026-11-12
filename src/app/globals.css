@@ -367,6 +367,17 @@ button {
   border-radius: 8px;
   font-size: 12px;
 }
+.review-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.review-list .notice {
+  flex-wrap: wrap;
+  border-left: 3px solid #fa9477;
+}
 .fine-print {
   font-size: 11px;
   line-height: 1.7;

@@ -88,3 +88,21 @@ export async function reserveFeedback(request: NextRequest, userId?: string) {
   if (userId)
     await takeQuota(`feedback-account:${digest(userId)}`, 5, 600, message);
 }
+export async function reserveCheckout(slug: string, request: NextRequest) {
+  const message =
+    "Too many charging requests for this charger. Please wait a few minutes and try again.";
+  // Per address and charger stops one device from parking a charger; the
+  // per-charger bucket bounds abuse from many addresses at once.
+  await takeQuota(
+    `checkout-source:${digest(`${source(request)}\n${slug.toLowerCase()}`)}`,
+    5,
+    600,
+    message,
+  );
+  await takeQuota(
+    `checkout-charger:${digest(slug.toLowerCase())}`,
+    30,
+    600,
+    message,
+  );
+}

@@ -69,9 +69,11 @@ Saved start and stop operations are observed instead of replaced. Unknown outcom
 
 Guest pages poll `GET /api/sessions/[id]`, which reads the stored snapshot. Webhooks drive state; a snapshot older than `SESSION_SYNC_WINDOW_SECONDS` triggers at most one fallback reconcile per window (claimed by a conditional `updated_at` update), and stop requests reconcile immediately. A protected cron route also reconciles up to ten sessions per minute, including abandoned Checkout sessions and pending refunds. Failed and pending entries rotate by update time so an outage cannot monopolize the batch. Locks prevent duplicate work; skipped work is retried in a later invocation.
 
-Open, unpaid Checkout sessions expire through reconciliation after 30 minutes. Squid verifies expiration with Stripe before releasing the local reservation; a payment racing with expiration is reconciled on the next pass. Stripe's default 24-hour Checkout expiration remains a fallback if scheduling is unavailable.
+Open, unpaid Checkout sessions expire through reconciliation after 5 minutes (`UNPAID_HOLD_MS`), so an abandoned checkout cannot keep a charger's one active-session slot; a new checkout request also releases a stale slot immediately. `/api/checkout` is rate limited per client address and charger slug, and per charger. Squid verifies expiration with Stripe before releasing the local reservation; a payment racing with expiration is reconciled on the next pass. Stripe's default 24-hour Checkout expiration remains a fallback if scheduling is unavailable.
 
 The 85% stop threshold provides headroom, not an energy or cost guarantee. The app requests a stop after 24 hours as well. If an authorization has expired while confirmed usage is active, the app requests a stop and holds the session for review. Provider outages, stale meters, and offline stations require monitoring.
+
+Sessions in `review` are retried by the per-minute cron for `REVIEW_RETRY_LIMIT` (10) passes, then left alone. The first pass emails the host (via Resend, when configured) and the dashboard lists the session with its `last_error`. The charger stays blocked until the session is resolved by an operator; the counters reset if the session leaves review. This needs the `202611120001_session_review.sql` migration.
 
 ## Operator recovery
 
