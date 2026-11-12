@@ -28,14 +28,21 @@ import {
 
 export const TERMINAL = ["completed", "canceled", "refunded"] as const;
 // An unpaid checkout holds the charger's one active-session slot only briefly.
-export const UNPAID_HOLD_MS = 5 * 60 * 1000;
-// The per-minute cron gives a session in review this many passes, then leaves
-// it to the host (who is emailed and sees the error on the dashboard).
+// Change the hold here; everything else derives from it.
+export const UNPAID_HOLD_MINUTES = 5;
+export const UNPAID_HOLD_MS = UNPAID_HOLD_MINUTES * 60 * 1000;
+// The per-minute cron gives a session in review this many passes, then moves
+// it to a slow lane: it is retried once its row has been idle for
+// REVIEW_BACKOFF_MS. It never leaves the queue, because some review states
+// clear on a later reconcile (and the 85% / 24 h stop depends on it).
 export const REVIEW_RETRY_LIMIT = 10;
-export function reconcileQueueFilter() {
+export const REVIEW_BACKOFF_MS = 60 * 60 * 1000;
+export function reconcileQueueFilter(now = Date.now()) {
+  const idleSince = new Date(now - REVIEW_BACKOFF_MS).toISOString();
   return [
     "status.not.in.(completed,canceled,refunded,review)",
     `and(status.eq.review,review_attempts.lt.${REVIEW_RETRY_LIMIT})`,
+    `and(status.eq.review,updated_at.lt."${idleSince}")`,
     "refund_requested.eq.true",
   ].join(",");
 }

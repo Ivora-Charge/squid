@@ -191,7 +191,7 @@ Each `reconcile` makes one or two Ivora reads (the charging session, plus a re-r
 
 ### Unpaid checkouts and sessions in review
 
-An unpaid guest checkout releases its charger after 5 minutes, and `/api/checkout` is rate limited (5 requests per 10 minutes per client address and charger, 30 per charger). A session in `review` appears in the host dashboard with its error, emails the host once, and is retried by the cron only 10 times. The `202611120001_session_review.sql` migration adds the counters; apply it before deploying this version (the reconcile cron queries the new columns).
+An unpaid guest checkout releases its charger after 5 minutes (`UNPAID_HOLD_MINUTES`), and `/api/checkout` is rate limited (5 requests per 10 minutes per client address and charger, 30 per charger). A session in `review` appears in the host dashboard with its error, emails the host once, and is retried by the cron every minute for 10 passes, then hourly until it leaves review. The `202611120001_session_review.sql` migration adds the counters; apply it before deploying this version (the reconcile cron queries the new columns).
 
 ### Ivora webhooks
 

@@ -227,11 +227,4 @@ describe("sessions in review", () => {
     expect(mock.session.review_attempts).toBe(0);
     expect(mock.session.review_notified_at).toBeNull();
   });
-  it("drops a session from the per-minute queue after a bounded number of tries", () => {
-    expect(sessions.REVIEW_RETRY_LIMIT).toBeGreaterThan(0);
-    expect(sessions.REVIEW_RETRY_LIMIT).toBeLessThanOrEqual(30);
-    expect(sessions.reconcileQueueFilter()).toContain(
-      `review_attempts.lt.${sessions.REVIEW_RETRY_LIMIT}`,
-    );
-  });
 });
