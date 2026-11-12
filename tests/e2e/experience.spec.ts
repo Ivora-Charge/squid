@@ -544,3 +544,27 @@ test("hosts see each charger's network status", async ({ page }) => {
     page.getByText("Guests can’t charge until your charger reconnects."),
   ).toBeVisible();
 });
+// A browser time zone different from the server's exposes any time-zone-dependent
+// text that is rendered during server render.
+test.describe("demo hydration", () => {
+  test.use({ timezoneId: "Pacific/Auckland", locale: "de-DE" });
+  for (const path of ["/demo", "/demo?onboarding=1"]) {
+    test(`host demo ${path} loads with no console errors or hydration mismatch`, async ({
+      page,
+    }) => {
+      const problems: string[] = [];
+      page.on("console", (m) => {
+        if (m.type() === "error" || m.type() === "warning")
+          problems.push(m.text());
+      });
+      page.on("pageerror", (e) => problems.push(e.message));
+      await page.goto(path);
+      await expect(
+        page
+          .getByRole("button", { name: "Add a charger", exact: true })
+          .first(),
+      ).toBeEnabled();
+      expect(problems).toEqual([]);
+    });
+  }
+});

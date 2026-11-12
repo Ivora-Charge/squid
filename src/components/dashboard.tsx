@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -62,6 +62,36 @@ const nav = [
   { id: "sessions", label: "Charging sessions", icon: Zap },
   { id: "payouts", label: "Earnings & payouts", icon: Wallet },
 ] as const;
+const noopSubscribe = () => () => {};
+// False during server render and hydration, true once mounted in the browser.
+function useMounted() {
+  return useSyncExternalStore(
+    noopSubscribe,
+    () => true,
+    () => false,
+  );
+}
+// Server render and hydration use a fixed reference (the newest session) and
+// UTC so both produce identical text; the browser's clock and time zone take
+// over right after mount.
+function useNow(sessions: HostSession[]) {
+  const mounted = useMounted();
+  if (mounted) return Date.now();
+  return sessions.reduce(
+    (latest, s) => Math.max(latest, Date.parse(s.created_at) || 0),
+    0,
+  );
+}
+function localTime(
+  value: string | number,
+  mounted: boolean,
+  options: Intl.DateTimeFormatOptions,
+) {
+  return new Date(value).toLocaleString("en-US", {
+    ...options,
+    ...(mounted ? {} : { timeZone: "UTC" }),
+  });
+}
 export function Dashboard({
   initial,
   demo = false,
@@ -117,12 +147,14 @@ export function Dashboard({
   useEffect(() => {
     if (!demo) setData(initial);
   }, [initial, demo]);
+  const now = useNow(data.sessions);
+  const mounted = useMounted();
   const sessions = useMemo(
     () =>
       data.sessions.filter(
-        (s) => Date.now() - Date.parse(s.created_at) < days * 86400000,
+        (s) => now - Date.parse(s.created_at) < days * 86400000,
       ),
-    [data.sessions, days],
+    [data.sessions, days, now],
   );
   const paid = sessions.filter((s) => s.status === "completed");
   const gross = paid.reduce((sum, s) => sum + (s.total_cents ?? 0), 0);
@@ -631,7 +663,12 @@ export function Dashboard({
                           <i /> Your earnings
                         </span>
                       </div>
-                      <RevenueChart sessions={paid} days={days} />
+                      <RevenueChart
+                        sessions={paid}
+                        days={days}
+                        now={now}
+                        mounted={mounted}
+                      />
                       <div className="chart-footer">
                         <span>
                           Guest payments <strong>{money(gross)}</strong>
@@ -1145,6 +1182,7 @@ function SessionsTable({
   properties: Property[];
   onRefund?: (s: HostSession) => void;
 }) {
+  const mounted = useMounted();
   return (
     <div className="table-scroll">
       <table>
@@ -1178,12 +1216,12 @@ function SessionsTable({
                 </div>
               </td>
               <td>
-                {new Date(s.created_at).toLocaleDateString("en-US", {
+                {localTime(s.created_at, mounted, {
                   month: "short",
                   day: "numeric",
                 })}
                 <small className="block muted">
-                  {new Date(s.created_at).toLocaleTimeString("en-US", {
+                  {localTime(s.created_at, mounted, {
                     hour: "numeric",
                     minute: "2-digit",
                   })}
@@ -1688,12 +1726,16 @@ function Stat({
 function RevenueChart({
   sessions,
   days,
+  now,
+  mounted,
 }: {
   sessions: HostSession[];
   days: number;
+  now: number;
+  mounted: boolean;
 }) {
   const bars = Array.from({ length: 15 }, (_, i) => {
-    const end = Date.now() - (14 - i) * (days / 15) * 86400000;
+    const end = now - (14 - i) * (days / 15) * 86400000;
     const start = end - (days / 15) * 86400000;
     return {
       value: sessions
@@ -1702,10 +1744,7 @@ function RevenueChart({
             Date.parse(s.created_at) >= start && Date.parse(s.created_at) < end,
         )
         .reduce((sum, s) => sum + hostShare(s), 0),
-      date: new Date(end).toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-      }),
+      date: localTime(end, mounted, { month: "short", day: "numeric" }),
     };
   });
   const max = Math.max(...bars.map((b) => b.value), 1000);
