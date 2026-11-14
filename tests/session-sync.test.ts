@@ -181,6 +181,8 @@ beforeEach(() => {
     stop_requested: false,
     refund_requested: false,
     last_error: null,
+    review_attempts: 0,
+    review_notified_at: null,
     created_at: "2026-09-23T10:00:00Z",
     updated_at: NOW,
     started_at: null,

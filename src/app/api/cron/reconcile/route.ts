@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { db } from "@/lib/server/db";
-import { reconcile } from "@/lib/server/sessions";
+import {
+  afterReconcile,
+  reconcile,
+  reconcileQueueFilter,
+} from "@/lib/server/sessions";
 export const maxDuration = 60;
 export async function GET(request: NextRequest) {
   const expected = `Bearer ${process.env.CRON_SECRET ?? ""}`;
@@ -15,7 +19,7 @@ export async function GET(request: NextRequest) {
   const { data, error } = await db()
     .from("squid_sessions")
     .select("id")
-    .or("status.not.in.(completed,canceled,refunded),refund_requested.eq.true")
+    .or(reconcileQueueFilter())
     .order("updated_at")
     .limit(10);
   if (error)
@@ -37,11 +41,9 @@ export async function GET(request: NextRequest) {
       try {
         return await reconcile(s.id);
       } finally {
-        // Rotate pending and failed sessions so one outage cannot starve the queue.
-        await db()
-          .from("squid_sessions")
-          .update({ updated_at: new Date().toISOString() })
-          .eq("id", s.id);
+        // Rotate pending and failed sessions so one outage cannot starve the
+        // queue, and count passes spent in review so they leave it.
+        await afterReconcile(s.id);
       }
     }),
   );

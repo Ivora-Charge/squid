@@ -90,3 +90,40 @@ export async function sendSignInEmail(
     );
   }
 }
+
+export function reviewAlertEmail(
+  detail: { sessionId: string; charger: string; error: string },
+  origin = appUrl(),
+) {
+  const link = new URL("/dashboard?tab=sessions", origin).toString();
+  const text = `A charging session at ${detail.charger} needs your review.\n\nWhat we saw: ${detail.error}\n\nThe charger stays unavailable to new guests until it is resolved. Open your dashboard to see it:\n${link}\n\nSession ${detail.sessionId.slice(0, 11)} · Squid by Ivora`;
+  return {
+    subject: "A charging session needs your review · Squid by Ivora",
+    text,
+    html: `<!doctype html><html lang="en"><body style="margin:0;background:#111513;color:#eeefe8;font-family:Arial,sans-serif"><div style="max-width:520px;margin:0 auto;padding:36px"><h1 style="font-size:24px">A charging session needs your review</h1><p style="font-size:16px;line-height:1.6;color:#b5beb3">${escapeHtml(detail.charger)} has a session Squid could not finish on its own.</p><p style="font-size:16px;line-height:1.6;color:#b5beb3"><strong>What we saw:</strong> ${escapeHtml(detail.error)}</p><p style="font-size:14px;color:#99a298">The charger stays unavailable to new guests until it is resolved.</p><p><a href="${escapeHtml(link)}" style="display:inline-block;background:#fa9477;color:#171b18;text-decoration:none;font-weight:bold;padding:14px 22px;border-radius:8px">Open your dashboard →</a></p><p style="font-size:12px;color:#99a298">Session ${escapeHtml(detail.sessionId.slice(0, 11))} · Squid by Ivora</p></div></body></html>`,
+  };
+}
+export async function sendReviewAlert(
+  email: string,
+  detail: { sessionId: string; charger: string; error: string },
+  origin = appUrl(),
+) {
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${required("RESEND_API_KEY")}`,
+      "Content-Type": "application/json",
+      "Idempotency-Key": `squid-review/${detail.sessionId}`,
+    },
+    body: JSON.stringify({
+      from: required("RESEND_FROM_EMAIL"),
+      to: [email],
+      ...reviewAlertEmail(detail, origin),
+    }),
+    cache: "no-store",
+    redirect: "error",
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!response.ok)
+    throw new HttpError(503, "Could not send the review notification.");
+}
