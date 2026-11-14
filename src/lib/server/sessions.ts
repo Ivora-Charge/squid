@@ -11,6 +11,7 @@ import {
   MINIMUM_CHARGE_CENTS,
 } from "../money";
 import { checked, db, LockBusyError, withLock } from "./db";
+import { reserveChargerCheckout } from "./auth-limits";
 import { appUrl } from "./config";
 import { sendReviewAlert } from "./email";
 import { HttpError } from "./security";
@@ -29,7 +30,7 @@ import {
 export const TERMINAL = ["completed", "canceled", "refunded"] as const;
 // An unpaid checkout holds the charger's one active-session slot only briefly.
 // Change the hold here; everything else derives from it.
-export const UNPAID_HOLD_MINUTES = 5;
+export const UNPAID_HOLD_MINUTES = 10;
 export const UNPAID_HOLD_MS = UNPAID_HOLD_MINUTES * 60 * 1000;
 // The per-minute cron gives a session in review this many passes, then moves
 // it to a slow lane: it is retried once its row has been idle for
@@ -37,6 +38,9 @@ export const UNPAID_HOLD_MS = UNPAID_HOLD_MINUTES * 60 * 1000;
 // clear on a later reconcile (and the 85% / 24 h stop depends on it).
 export const REVIEW_RETRY_LIMIT = 10;
 export const REVIEW_BACKOFF_MS = 60 * 60 * 1000;
+// The host is emailed once, when a session is still in review after this many
+// reconcile passes; many review states clear on their own within a pass or two.
+export const REVIEW_ALERT_AFTER_PASSES = 3;
 export function reconcileQueueFilter(now = Date.now()) {
   const idleSince = new Date(now - REVIEW_BACKOFF_MS).toISOString();
   return [
@@ -51,8 +55,9 @@ export function reconcileQueueFilter(now = Date.now()) {
 export async function afterReconcile(id: string) {
   const s = await loadSession(id);
   if (s.status === "review") {
-    await update(id, { review_attempts: s.review_attempts + 1 });
-    await notifyReview(s);
+    const attempts = s.review_attempts + 1;
+    await update(id, { review_attempts: attempts });
+    if (attempts >= REVIEW_ALERT_AFTER_PASSES) await notifyReview(s);
   } else {
     await update(
       id,
@@ -87,7 +92,7 @@ async function notifyReview(s: ChargeSession) {
       appUrl(),
     );
   } catch {
-    // Release the claim so a later pass tries again (bounded by the limit).
+    // Release the claim so a later pass tries again.
     await db()
       .from("squid_sessions")
       .update({ review_notified_at: null })
@@ -277,6 +282,17 @@ export async function createCheckout(
         "A guest is already starting or using this charger. Please try again shortly.",
       );
     const s = checked(insertion) as ChargeSession;
+    try {
+      await reserveChargerCheckout(p.id);
+    } catch (error) {
+      // Over the per-charger quota: give the slot back before any checkout exists.
+      await db()
+        .from("squid_sessions")
+        .delete()
+        .eq("id", id)
+        .is("stripe_checkout_id", null);
+      throw error;
+    }
     await ensureCheckout(
       s,
       p as Property,

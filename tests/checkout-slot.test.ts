@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChargeSession } from "@/lib/types";
 
 // A small in-memory squid_sessions table, enough for createCheckout and
-// reconcile, including the one-active-session unique index.
+// reconcile, including the one-active-session unique index, plus an
+// in-memory squid_take_rate_limit with the same quota semantics.
 type Row = Record<string, unknown>;
 const mock = vi.hoisted(() => ({
   rows: [] as Row[],
@@ -15,6 +16,8 @@ const mock = vi.hoisted(() => ({
   expire: vi.fn(),
   create: vi.fn(),
   piRetrieve: vi.fn(),
+  buckets: new Map<string, number>(),
+  rpc: vi.fn(),
 }));
 const TERMINAL = ["completed", "canceled", "refunded"];
 vi.mock("@/lib/server/db", () => {
@@ -23,12 +26,21 @@ vi.mock("@/lib/server/db", () => {
     const filters: [string, unknown][] = [];
     let values: Row | null = null;
     let inserted: Row | null = null;
+    let deleting = false;
     const matches = () =>
       mock.rows.filter((r) => filters.every(([k, v]) => r[k] === v));
     const q = {
       select: () => q,
       eq: (k: string, v: unknown) => {
         filters.push([k, v]);
+        return q;
+      },
+      is: (k: string, v: unknown) => {
+        filters.push([k, v]);
+        return q;
+      },
+      delete: () => {
+        deleting = true;
         return q;
       },
       update: (v: Row) => {
@@ -68,6 +80,10 @@ vi.mock("@/lib/server/db", () => {
       },
       then: (resolve: (v: unknown) => unknown) => {
         if (values) for (const r of matches()) Object.assign(r, values);
+        if (deleting) {
+          const gone = matches();
+          mock.rows = mock.rows.filter((r) => !gone.includes(r));
+        }
         return Promise.resolve(resolve({ data: [], error: null }));
       },
     };
@@ -80,7 +96,7 @@ vi.mock("@/lib/server/db", () => {
       return result.data;
     },
     withLock: async (_key: string, run: () => Promise<unknown>) => run(),
-    db: () => ({ from: query }),
+    db: () => ({ from: query, rpc: mock.rpc }),
   };
 });
 vi.mock("@/lib/server/stripe", () => ({
@@ -111,7 +127,14 @@ vi.mock("@/lib/server/ivora", async (importOriginal) => ({
   }),
 }));
 vi.mock("@/lib/server/email", () => ({ sendReviewAlert: vi.fn() }));
+vi.mock("@/lib/server/security", async (original) => ({
+  ...(await original<typeof import("@/lib/server/security")>()),
+  issueGuestCookie: async () => undefined,
+}));
 
+import { randomUUID } from "node:crypto";
+import { NextRequest } from "next/server";
+import { POST } from "@/app/api/checkout/route";
 import * as sessions from "@/lib/server/sessions";
 import { HttpError } from "@/lib/server/security";
 
@@ -155,6 +178,21 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(NOW);
   vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://squid.example");
+  vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "test-private");
+  vi.stubEnv("VERCEL", "1");
+  mock.buckets = new Map();
+  mock.rpc.mockImplementation(
+    async (
+      name: string,
+      args: { bucket_key: string; quota: number; period_seconds: number },
+    ) => {
+      if (name !== "squid_take_rate_limit") throw new Error(name);
+      const used = mock.buckets.get(args.bucket_key) ?? 0;
+      if (used >= args.quota) return { data: false, error: null };
+      mock.buckets.set(args.bucket_key, used + 1);
+      return { data: true, error: null };
+    },
+  );
   mock.property = {
     id: "property",
     host_id: "host",
@@ -345,5 +383,86 @@ describe("reconcile queue filter", () => {
         NOW + sessions.REVIEW_BACKOFF_MS + 1,
       ),
     ).toBe(true);
+  });
+});
+
+const chargerTakes = () =>
+  [...mock.buckets]
+    .filter(([key]) => key.startsWith("checkout-charger:"))
+    .reduce((sum, [, used]) => sum + used, 0);
+function checkout(source: string, requestId: string = randomUUID()) {
+  return POST(
+    new NextRequest("https://squid.example/api/checkout", {
+      method: "POST",
+      headers: {
+        origin: "https://squid.example",
+        "Content-Type": "application/json",
+        "x-vercel-forwarded-for": source,
+      },
+      body: JSON.stringify({ slug: "cabin", requestId }),
+    }),
+  );
+}
+
+describe("per-charger checkout quota", () => {
+  it("counts a checkout that takes the slot", async () => {
+    mock.rows = [];
+    const response = await checkout("203.0.113.7");
+    expect(response.status).toBe(200);
+    expect(chargerTakes()).toBe(1);
+    expect(mock.rows).toHaveLength(1);
+  });
+  it("does not count a request refused because the slot is taken", async () => {
+    const response = await checkout("203.0.113.7");
+    expect(response.status).toBe(409);
+    expect(chargerTakes()).toBe(0);
+  });
+  it("does not count a request refused by validation", async () => {
+    const response = await POST(
+      new NextRequest("https://squid.example/api/checkout", {
+        method: "POST",
+        headers: {
+          origin: "https://squid.example",
+          "Content-Type": "application/json",
+          "x-vercel-forwarded-for": "203.0.113.7",
+        },
+        body: JSON.stringify({ slug: "cabin", requestId: "not-a-uuid" }),
+      }),
+    );
+    expect(response.status).toBe(400);
+    expect(mock.rpc).not.toHaveBeenCalled();
+  });
+  it("gives the slot back when the charger quota is used up", async () => {
+    mock.rows = [];
+    for (let i = 0; i < 30; i++) {
+      await checkout(`198.51.100.${i}`);
+      // Each guest abandons the checkout; free the slot for the next one.
+      for (const r of mock.rows) r.status = "canceled";
+    }
+    expect(chargerTakes()).toBe(30);
+    mock.create.mockClear();
+    const response = await checkout("192.0.2.1");
+    expect(response.status).toBe(429);
+    expect(mock.create).not.toHaveBeenCalled();
+    expect(
+      mock.rows.filter((r) => !TERMINAL.includes(r.status as string)),
+    ).toHaveLength(0);
+  });
+  it("does not let 6 addresses spamming refused requests lock other guests out", async () => {
+    // A fresh unpaid checkout holds the slot, so every request is refused.
+    oldSession().created_at = minutesAgo(1);
+    const statuses: number[] = [];
+    for (let a = 1; a <= 6; a++)
+      for (let i = 0; i < 10; i++)
+        statuses.push((await checkout(`203.0.113.${a}`)).status);
+    // 5 per address reach the slot (409), the rest hit the address limit (429).
+    expect(statuses.filter((s) => s === 409)).toHaveLength(30);
+    expect(statuses.filter((s) => s === 429)).toHaveLength(30);
+    expect(chargerTakes()).toBe(0);
+    // The slot frees up: the next guest, from another address, gets a checkout.
+    oldSession().status = "canceled";
+    const response = await checkout("192.0.2.50");
+    expect(response.status).toBe(200);
+    expect(chargerTakes()).toBe(1);
   });
 });

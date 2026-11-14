@@ -88,21 +88,26 @@ export async function reserveFeedback(request: NextRequest, userId?: string) {
   if (userId)
     await takeQuota(`feedback-account:${digest(userId)}`, 5, 600, message);
 }
+const checkoutMessage =
+  "Too many charging requests for this charger. Please wait a few minutes and try again.";
+// Per address and charger: stops one device from parking a charger. Every
+// request counts here.
 export async function reserveCheckout(slug: string, request: NextRequest) {
-  const message =
-    "Too many charging requests for this charger. Please wait a few minutes and try again.";
-  // Per address and charger stops one device from parking a charger; the
-  // per-charger bucket bounds abuse from many addresses at once.
   await takeQuota(
     `checkout-source:${digest(`${source(request)}\n${slug.toLowerCase()}`)}`,
     5,
     600,
-    message,
+    checkoutMessage,
   );
+}
+// Per charger: bounds abuse from many addresses at once. Taken only once a
+// checkout holds the charger's slot, so refused requests (rate-limited,
+// invalid, slot taken) cannot lock other guests out.
+export async function reserveChargerCheckout(propertyId: string) {
   await takeQuota(
-    `checkout-charger:${digest(slug.toLowerCase())}`,
+    `checkout-charger:${digest(propertyId)}`,
     30,
     600,
-    message,
+    checkoutMessage,
   );
 }

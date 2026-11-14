@@ -161,13 +161,17 @@ describe("/api/checkout rate limit", () => {
   it("limits per address and charger, without storing either in clear", async () => {
     await checkout("cabin", "203.0.113.7");
     await checkout("cottage", "203.0.113.7");
+    await checkout("cabin", "198.51.100.4");
     const keys = mock.rpc.mock.calls.map((c) => c[1].bucket_key as string);
-    expect(keys.length).toBeGreaterThanOrEqual(4);
+    // The route takes only the address+charger bucket; the per-charger bucket
+    // is taken inside createCheckout once the slot is held.
+    expect(keys).toHaveLength(3);
     expect(new Set(keys).size).toBe(keys.length);
     for (const key of keys) {
       expect(key).not.toContain("203.0.113.7");
       expect(key).not.toContain("cabin");
       expect(key).not.toContain("cottage");
+      expect(key.startsWith("checkout-source:")).toBe(true);
     }
   });
   it("passes a request inside the quota to the checkout", async () => {
@@ -178,17 +182,18 @@ describe("/api/checkout rate limit", () => {
 });
 
 describe("shorter hold for an unpaid checkout", () => {
-  it("is a few minutes, far below the old 30", () => {
-    expect(sessions.UNPAID_HOLD_MS).toBeGreaterThan(0);
-    expect(sessions.UNPAID_HOLD_MS).toBeLessThanOrEqual(10 * 60_000);
+  it("is 10 minutes, far below the old 30", () => {
+    expect(sessions.UNPAID_HOLD_MINUTES).toBe(10);
+    expect(sessions.UNPAID_HOLD_MS).toBe(10 * 60_000);
   });
   it("releases an unpaid slot after the hold", async () => {
+    mock.session.created_at = new Date(NOW - 11 * 60_000).toISOString();
     const result = await sessions.reconcile("s");
     expect(mock.expire).toHaveBeenCalledTimes(1);
     expect(result.status).toBe("canceled");
   });
   it("keeps a recent unpaid slot", async () => {
-    mock.session.created_at = new Date(NOW - 60_000).toISOString();
+    mock.session.created_at = new Date(NOW - 9 * 60_000).toISOString();
     const result = await sessions.reconcile("s");
     expect(mock.expire).not.toHaveBeenCalled();
     expect(result.status).toBe("awaiting_payment");
@@ -200,19 +205,34 @@ describe("sessions in review", () => {
     mock.session.status = "review";
     mock.session.last_error = "Charger state needs operator review.";
   });
-  it("counts each pass and tells the host once", async () => {
+  it("tells the host only once a session is still in review after its third pass", async () => {
+    expect(sessions.REVIEW_ALERT_AFTER_PASSES).toBe(3);
     await sessions.afterReconcile("s");
     expect(mock.session.review_attempts).toBe(1);
+    await sessions.afterReconcile("s");
+    expect(mock.session.review_attempts).toBe(2);
+    expect(mock.sendReviewAlert).not.toHaveBeenCalled();
+    expect(mock.session.review_notified_at).toBeNull();
+    await sessions.afterReconcile("s");
+    expect(mock.session.review_attempts).toBe(3);
     expect(mock.sendReviewAlert).toHaveBeenCalledTimes(1);
     expect(mock.sendReviewAlert.mock.calls[0][0]).toBe("host@example.com");
     expect(JSON.stringify(mock.sendReviewAlert.mock.calls[0][1])).toContain(
       "Charger state needs operator review.",
     );
-    await sessions.afterReconcile("s");
-    expect(mock.session.review_attempts).toBe(2);
+    for (let pass = 4; pass <= 12; pass++) await sessions.afterReconcile("s");
+    expect(mock.session.review_attempts).toBe(12);
     expect(mock.sendReviewAlert).toHaveBeenCalledTimes(1);
   });
+  it("does not email a session that leaves review before its third pass", async () => {
+    await sessions.afterReconcile("s");
+    await sessions.afterReconcile("s");
+    mock.session.status = "charging";
+    await sessions.afterReconcile("s");
+    expect(mock.sendReviewAlert).not.toHaveBeenCalled();
+  });
   it("tries again to notify when delivery failed", async () => {
+    mock.session.review_attempts = 2;
     mock.sendReviewAlert.mockRejectedValueOnce(new Error("down"));
     await sessions.afterReconcile("s");
     expect(mock.session.review_notified_at).toBeNull();
@@ -221,7 +241,9 @@ describe("sessions in review", () => {
     expect(mock.session.review_notified_at).not.toBeNull();
   });
   it("resets the counters when the session leaves review", async () => {
+    mock.session.review_attempts = 2;
     await sessions.afterReconcile("s");
+    expect(mock.session.review_notified_at).not.toBeNull();
     mock.session.status = "charging";
     await sessions.afterReconcile("s");
     expect(mock.session.review_attempts).toBe(0);
