@@ -68,6 +68,9 @@ export type ChargeSession = {
   stop_requested: boolean;
   refund_requested: boolean;
   last_error: string | null;
+  // Reconcile passes spent in `review`, and when the host was emailed about it.
+  review_attempts: number;
+  review_notified_at: string | null;
   created_at: string;
   updated_at: string;
   started_at: string | null;
@@ -101,7 +104,7 @@ export type HostSession = Pick<
   | "created_at"
   | "started_at"
   | "ended_at"
->;
+> & { last_error?: string | null };
 export type DashboardData = {
   properties: Property[];
   sessions: HostSession[];

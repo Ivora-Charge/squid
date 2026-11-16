@@ -848,6 +848,41 @@ export function Dashboard({
                   </div>
                 </section>
               )}
+              {(tab === "overview" || tab === "sessions") &&
+                data.sessions.some((s) => s.status === "review") && (
+                  <section
+                    className="panel review-panel"
+                    aria-label="Sessions needing review"
+                  >
+                    <div className="section-top">
+                      <div>
+                        <h2>Needs your review</h2>
+                        <p>
+                          Squid could not finish these on its own. The charger
+                          stays unavailable to new guests until they are
+                          resolved.
+                        </p>
+                      </div>
+                    </div>
+                    <ul className="review-list">
+                      {data.sessions
+                        .filter((s) => s.status === "review")
+                        .map((s) => (
+                          <li key={s.id} className="notice">
+                            <strong>
+                              {data.properties.find(
+                                (p) => p.id === s.property_id,
+                              )?.name ?? "Charger"}
+                            </strong>
+                            <span>
+                              {s.last_error ?? "This session needs review."}
+                            </span>
+                            <small>{s.id.slice(0, 11)}</small>
+                          </li>
+                        ))}
+                    </ul>
+                  </section>
+                )}
               {(tab === "overview" || tab === "sessions") && (
                 <section className="panel sessions-panel">
                   <div className="section-top">
@@ -1243,6 +1278,9 @@ function SessionsTable({
                     ? "Complete"
                     : s.status.replaceAll("_", " ")}
                 </span>
+                {s.status === "review" && s.last_error && (
+                  <small className="block muted">{s.last_error}</small>
+                )}
               </td>
               {onRefund && (
                 <td>

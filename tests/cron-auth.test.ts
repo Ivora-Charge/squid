@@ -4,10 +4,16 @@ import { NextRequest } from "next/server";
 const mocks = vi.hoisted(() => ({
   db: vi.fn(),
   reconcile: vi.fn(),
+  afterReconcile: vi.fn(),
+  queueFilter: vi.fn(() => "queue-filter"),
   continueSending: vi.fn(),
 }));
 vi.mock("@/lib/server/db", () => ({ db: mocks.db }));
-vi.mock("@/lib/server/sessions", () => ({ reconcile: mocks.reconcile }));
+vi.mock("@/lib/server/sessions", () => ({
+  reconcile: mocks.reconcile,
+  afterReconcile: mocks.afterReconcile,
+  reconcileQueueFilter: mocks.queueFilter,
+}));
 vi.mock("@/lib/server/newsletter", () => ({
   continueSending: mocks.continueSending,
 }));
@@ -90,5 +96,40 @@ describe.each(Object.entries(routes))("/api/cron/%s auth", (name, GET) => {
     });
     const response = await GET(request(name, "Bearer test-cron-secret"));
     expect(response.status).toBe(200);
+  });
+});
+
+describe("/api/cron/reconcile queue", () => {
+  afterEach(() => vi.unstubAllEnvs());
+  it("selects the bounded queue and settles every session it ran", async () => {
+    vi.stubEnv("CRON_SECRET", "test-cron-secret");
+    const or = vi.fn();
+    const chain: Record<string, unknown> = {};
+    chain.select = () => chain;
+    chain.or = (filter: string) => {
+      or(filter);
+      return chain;
+    };
+    chain.order = () => chain;
+    chain.limit = async () => ({
+      data: [{ id: "a" }, { id: "b" }],
+      error: null,
+    });
+    chain.delete = () => chain;
+    chain.lt = async () => ({});
+    mocks.db.mockReset();
+    mocks.db.mockImplementation(() => ({ from: () => chain }));
+    mocks.reconcile.mockReset();
+    mocks.reconcile
+      .mockResolvedValueOnce({})
+      .mockRejectedValueOnce(new Error());
+    const settle = vi.fn();
+    mocks.afterReconcile.mockImplementation(settle);
+    const response = await reconcileRoute(
+      request("reconcile", "Bearer test-cron-secret"),
+    );
+    expect(await response.json()).toEqual({ processed: 1, retry: 1 });
+    expect(or).toHaveBeenCalledWith(mocks.queueFilter());
+    expect(settle.mock.calls.map((c) => c[0])).toEqual(["a", "b"]);
   });
 });

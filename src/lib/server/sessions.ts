@@ -11,7 +11,9 @@ import {
   MINIMUM_CHARGE_CENTS,
 } from "../money";
 import { checked, db, LockBusyError, withLock } from "./db";
+import { reserveChargerCheckout } from "./auth-limits";
 import { appUrl } from "./config";
+import { sendReviewAlert } from "./email";
 import { HttpError } from "./security";
 import { stripe, payoutStatus, paymentOptions } from "./stripe";
 import {
@@ -26,6 +28,80 @@ import {
 } from "./ivora";
 
 export const TERMINAL = ["completed", "canceled", "refunded"] as const;
+// An unpaid checkout holds the charger's one active-session slot only briefly.
+// Change the hold here; everything else derives from it.
+export const UNPAID_HOLD_MINUTES = 10;
+export const UNPAID_HOLD_MS = UNPAID_HOLD_MINUTES * 60 * 1000;
+// The per-minute cron gives a session in review this many passes, then moves
+// it to a slow lane: it is retried once its row has been idle for
+// REVIEW_BACKOFF_MS. It never leaves the queue, because some review states
+// clear on a later reconcile (and the 85% / 24 h stop depends on it).
+export const REVIEW_RETRY_LIMIT = 10;
+export const REVIEW_BACKOFF_MS = 60 * 60 * 1000;
+// The host is emailed once, when a session is still in review after this many
+// reconcile passes; many review states clear on their own within a pass or two.
+export const REVIEW_ALERT_AFTER_PASSES = 3;
+export function reconcileQueueFilter(now = Date.now()) {
+  const idleSince = new Date(now - REVIEW_BACKOFF_MS).toISOString();
+  return [
+    "status.not.in.(completed,canceled,refunded,review)",
+    `and(status.eq.review,review_attempts.lt.${REVIEW_RETRY_LIMIT})`,
+    `and(status.eq.review,updated_at.lt."${idleSince}")`,
+    "refund_requested.eq.true",
+  ].join(",");
+}
+// Runs after each cron pass: rotates the session to the back of the queue,
+// counts passes spent in review and tells the host once.
+export async function afterReconcile(id: string) {
+  const s = await loadSession(id);
+  if (s.status === "review") {
+    const attempts = s.review_attempts + 1;
+    await update(id, { review_attempts: attempts });
+    if (attempts >= REVIEW_ALERT_AFTER_PASSES) await notifyReview(s);
+  } else {
+    await update(
+      id,
+      s.review_attempts || s.review_notified_at
+        ? { review_attempts: 0, review_notified_at: null }
+        : {},
+    );
+  }
+}
+async function notifyReview(s: ChargeSession) {
+  if (s.review_notified_at) return;
+  // Claim first so concurrent passes send at most one email.
+  const claimed = checked(
+    await db()
+      .from("squid_sessions")
+      .update({ review_notified_at: new Date().toISOString() })
+      .eq("id", s.id)
+      .is("review_notified_at", null)
+      .select("id"),
+  );
+  if (!claimed?.length) return;
+  try {
+    const { data } = await db().auth.admin.getUserById(s.host_id);
+    if (!data.user?.email) throw new Error("Host has no email address.");
+    await sendReviewAlert(
+      data.user.email,
+      {
+        sessionId: s.id,
+        charger: (await property(s.property_id)).name,
+        error: s.last_error ?? "Needs review.",
+      },
+      appUrl(),
+    );
+  } catch {
+    // Release the claim so a later pass tries again.
+    await db()
+      .from("squid_sessions")
+      .update({ review_notified_at: null })
+      .eq("id", s.id);
+    console.error("[Squid] Could not email host about a session in review", {
+      session: s.id,
+    });
+  }
+}
 export async function loadSession(id: string): Promise<ChargeSession> {
   const { data, error } = await db()
     .from("squid_sessions")
@@ -165,6 +241,7 @@ export async function createCheckout(
       );
       return loadSession(prior.id);
     }
+    await releaseStaleUnpaid(p.id);
     if (!p.tariff_id)
       throw new Error(
         "This charger’s price is being updated. Please try again in a moment.",
@@ -205,6 +282,17 @@ export async function createCheckout(
         "A guest is already starting or using this charger. Please try again shortly.",
       );
     const s = checked(insertion) as ChargeSession;
+    try {
+      await reserveChargerCheckout(p.id);
+    } catch (error) {
+      // Over the per-charger quota: give the slot back before any checkout exists.
+      await db()
+        .from("squid_sessions")
+        .delete()
+        .eq("id", id)
+        .is("stripe_checkout_id", null);
+      throw error;
+    }
     await ensureCheckout(
       s,
       p as Property,
@@ -213,6 +301,24 @@ export async function createCheckout(
     );
     return loadSession(id);
   });
+}
+// Free the slot at once when its unpaid checkout is past the hold, instead of
+// waiting for the next cron pass. A checkout that was paid meanwhile advances
+// normally and the new request is turned away as before.
+async function releaseStaleUnpaid(propertyId: string) {
+  const { data } = await db()
+    .from("squid_sessions")
+    .select("id,created_at")
+    .eq("property_id", propertyId)
+    .eq("status", "awaiting_payment")
+    .maybeSingle();
+  if (!data || Date.now() - Date.parse(data.created_at) <= UNPAID_HOLD_MS)
+    return;
+  try {
+    await reconcile(data.id);
+  } catch {
+    // The cron retries; the insert below reports the slot as busy.
+  }
 }
 async function report(
   s: ChargeSession,
@@ -327,11 +433,11 @@ export async function reconcile(id: string): Promise<ChargeSession> {
       options,
     );
     // Use the provider's default expiry so delayed retries have identical valid
-    // parameters. Reconciliation releases abandoned reservations after 30 minutes.
+    // parameters. Reconciliation releases an unpaid checkout after UNPAID_HOLD_MS.
     if (
       checkout.status === "open" &&
       (s.stop_requested ||
-        Date.now() - Date.parse(s.created_at) > 30 * 60 * 1000)
+        Date.now() - Date.parse(s.created_at) > UNPAID_HOLD_MS)
     ) {
       await stripe().checkout.sessions.expire(
         checkout.id,

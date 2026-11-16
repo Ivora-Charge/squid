@@ -568,3 +568,13 @@ test.describe("demo hydration", () => {
     });
   }
 });
+test("host sees a session in review with its error", async ({ page }) => {
+  await page.goto("/demo?review=1");
+  const panel = page.getByRole("region", { name: "Sessions needing review" });
+  await expect(panel).toBeVisible();
+  await expect(panel).toContainText("Charger state needs operator review.");
+  await page.goto("/demo");
+  await expect(
+    page.getByRole("region", { name: "Sessions needing review" }),
+  ).toHaveCount(0);
+});
